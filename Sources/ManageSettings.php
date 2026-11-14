@@ -8,10 +8,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -179,9 +179,10 @@ function ModifyBasicSettings($return_config = false)
 			'select',
 			'jquery_source',
 			array(
-				'auto' => $txt['jquery_auto'],
+				'cdn' => $txt['jquery_google_cdn'],
+				'jquery_cdn' => $txt['jquery_jquery_cdn'],
+				'microsoft_cdn' => $txt['jquery_microsoft_cdn'],
 				'local' => $txt['jquery_local'],
-				'cdn' => $txt['jquery_cdn'],
 				'custom' => $txt['jquery_custom']
 			),
 			'onchange' => 'if (this.value == \'custom\'){document.getElementById(\'jquery_custom\').disabled = false; } else {document.getElementById(\'jquery_custom\').disabled = true;}'
@@ -189,7 +190,7 @@ function ModifyBasicSettings($return_config = false)
 		array(
 			'text',
 			'jquery_custom',
-			'disabled' => isset($modSettings['jquery_source']) && $modSettings['jquery_source'] != 'custom', 'size' => 75
+			'disabled' => !isset($modSettings['jquery_source']) || (isset($modSettings['jquery_source']) && $modSettings['jquery_source'] != 'custom'), 'size' => 75
 		),
 		'',
 
@@ -202,17 +203,8 @@ function ModifyBasicSettings($return_config = false)
 		array('text', 'meta_keywords', 'subtext' => $txt['meta_keywords_note'], 'size' => 50),
 		'',
 
-		// Number formatting, timezones.
+		// Time zone and formatting.
 		array('text', 'time_format'),
-		array(
-			'float',
-			'time_offset',
-			6,
-			'postinput' => $txt['hours'],
-			'step' => 0.25,
-			'min' => -23.5,
-			'max' => 23.5
-		),
 		array('select', 'default_timezone', array_filter(smf_list_timezones(), 'is_string', ARRAY_FILTER_USE_KEY)),
 		array('text', 'timezone_priority_countries', 'subtext' => $txt['setting_timezone_priority_countries_note']),
 		'',
@@ -225,6 +217,11 @@ function ModifyBasicSettings($return_config = false)
 		// Statistics.
 		array('check', 'trackStats'),
 		array('check', 'hitStats'),
+		'',
+
+		// Guest stats
+		array('check', 'no_guest_logging'),
+		array('check', 'no_guest_views'),
 		'',
 
 		// Option-ish things... miscellaneous sorta.
@@ -241,6 +238,7 @@ function ModifyBasicSettings($return_config = false)
 				'90' => $txt['alerts_auto_purge_90'],
 			),
 		),
+		array('int', 'alerts_per_page', 'step' => 1, 'min' => 0, 'max' => 999),
 	);
 
 	call_integration_hook('integrate_modify_basic_settings', array(&$config_vars));
@@ -792,7 +790,7 @@ function ModifyAntispamSettings($return_config = false)
 		$context['question_answers'][$row['id_question']] = array(
 			'lngfile' => $lang,
 			'question' => $row['question'],
-			'answers' => $smcFunc['json_decode']($row['answers'], true),
+			'answers' => (array) $smcFunc['json_decode']($row['answers'], true),
 		);
 		$context['qa_by_lang'][$lang][] = $row['id_question'];
 	}
@@ -1600,7 +1598,14 @@ function ShowCustomProfiles()
 				'data' => array(
 					'function' => function($rowData) use ($scripturl)
 					{
-						return sprintf('<a href="%1$s?action=admin;area=featuresettings;sa=profileedit;fid=%2$d">%3$s</a><div class="smalltext">%4$s</div>', $scripturl, $rowData['id_field'], $rowData['field_name'], $rowData['field_desc']);
+						$field_name = tokenTxtReplace($rowData['field_name']);
+						$field_desc = tokenTxtReplace($rowData['field_desc']);
+
+						return sprintf('<a href="%1$s?action=admin;area=featuresettings;sa=profileedit;fid=%2$d">%3$s</a><div class="smalltext">%4$s</div>',
+							$scripturl,
+							$rowData['id_field'],
+							$field_name,
+							$field_desc);
 					},
 					'style' => 'width: 62%;',
 				),
@@ -1955,9 +1960,10 @@ function EditCustomProfiles()
 		$mask = isset($_POST['mask']) ? $_POST['mask'] : '';
 		if ($mask == 'regex' && isset($_POST['regex']))
 			$mask .= $_POST['regex'];
+		$mask = $smcFunc['normalize']($mask);
 
 		$field_length = isset($_POST['max_length']) ? (int) $_POST['max_length'] : 255;
-		$enclose = isset($_POST['enclose']) ? $_POST['enclose'] : '';
+		$enclose = isset($_POST['enclose']) ? $smcFunc['normalize']($_POST['enclose']) : '';
 		$placement = isset($_POST['placement']) ? (int) $_POST['placement'] : 0;
 
 		// Select options?

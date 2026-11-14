@@ -1,5 +1,5 @@
 <?php
-// Version: 2.1 RC4; ManageSettings
+// Version: 2.1.8; ManageSettings
 
 global $scripturl;
 
@@ -56,6 +56,11 @@ $txt['globalCookiesDomain'] = 'Main domain used for subdomain independent cookie
 $txt['invalid_cookie_domain'] = 'The domain introduced seems to be invalid, please check it and save again.';
 $txt['secureCookies'] = 'Force cookies to be secure';
 $txt['httponlyCookies'] = 'Force cookies to be made accessible only through the HTTP protocol';
+$txt['samesiteCookies'] = 'Force cookies to be sent only to first parties';
+$txt['samesiteNone'] = 'None';
+$txt['samesiteLax'] = 'Lax';
+$txt['samesiteStrict'] = 'Strict';
+$txt['samesiteSecureRequired'] = 'If SameSite Cookies is set to \'None\', cookies must be secure.';
 $txt['securityDisable'] = 'Disable administration security';
 $txt['securityDisable_moderate'] = 'Disable moderation security';
 $txt['send_validation_onChange'] = 'Require reactivation after email change';
@@ -68,12 +73,14 @@ $txt['alerts_auto_purge_7'] = 'After 1 week';
 $txt['alerts_auto_purge_30'] = 'After 1 month';
 $txt['alerts_auto_purge_90'] = 'After 3 months';
 $txt['alerts_auto_purge_0'] = 'Never';
+$txt['alerts_per_page'] = 'Alerts Per Page';
 $txt['jquery_source'] = 'Source for the jQuery Library';
 $txt['jquery_custom_label'] = 'Custom';
 $txt['jquery_custom'] = 'Custom URL to the jQuery Library';
 $txt['jquery_local'] = 'Local';
-$txt['jquery_cdn'] = 'Google CDN';
-$txt['jquery_auto'] = 'Auto';
+$txt['jquery_google_cdn'] = 'Google CDN';
+$txt['jquery_jquery_cdn'] = 'jQuery CDN';
+$txt['jquery_microsoft_cdn'] = 'Microsoft CDN';
 $txt['queryless_urls'] = 'Search engine friendly URLs';
 $txt['minimize_files'] = 'Minimize CSS and JavaScript files';
 $txt['queryless_urls_note'] = 'Apache/Lighttpd only';
@@ -96,6 +103,8 @@ $txt['defaultMaxMembers'] = 'Members per page in member list';
 $txt['timeLoadPageEnable'] = 'Display time taken to create every page';
 $txt['disableHostnameLookup'] = 'Disable hostname lookups';
 $txt['who_enabled'] = 'Enable who\'s online list';
+$txt['no_guest_logging'] = 'Do not include guests or bots in Users Online stats';
+$txt['no_guest_views'] = 'Disable counting views for guests and bots';
 $txt['meta_keywords'] = 'Meta keywords associated with forum';
 $txt['meta_keywords_note'] = 'For search engines. Leave blank for default.';
 $txt['settings_error'] = 'Warning: Updating of Settings.php failed, the settings cannot be saved.';
@@ -246,7 +255,7 @@ $txt['signature_max_font_size'] = 'Maximum font size allowed in signatures (pixe
 $txt['signature_bbc'] = 'Enabled BBC tags';
 
 $txt['custom_profile_title'] = 'Custom Profile Fields';
-$txt['custom_profile_desc'] = 'From this page you can create your own custom profile fields that fit in with your own forums requirements';
+$txt['custom_profile_desc'] = 'From this page you can create your own custom profile fields that fit in with your own forum\'s requirements';
 $txt['custom_profile_active'] = 'Active';
 $txt['custom_profile_fieldname'] = 'Field Name';
 $txt['custom_profile_fieldtype'] = 'Field Type';
@@ -267,6 +276,7 @@ $txt['custom_edit_general'] = 'Display Settings';
 $txt['custom_edit_input'] = 'Input Settings';
 $txt['custom_edit_advanced'] = 'Advanced Settings';
 $txt['custom_edit_name'] = 'Name';
+$txt['custom_edit_name_desc'] = 'You can use translatable tokens in this field.';
 $txt['custom_edit_desc'] = 'Description';
 $txt['custom_edit_profile'] = 'Profile Section';
 $txt['custom_edit_profile_desc'] = 'Section of profile the users will be able to edit this in.';

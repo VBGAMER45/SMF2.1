@@ -9,10 +9,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -28,7 +28,7 @@ if (!defined('SMF'))
  */
 function preparsecode(&$message, $previewing = false)
 {
-	global $user_info, $modSettings, $context, $sourcedir;
+	global $user_info, $modSettings, $context, $sourcedir, $smcFunc;
 
 	static $tags_regex, $disallowed_tags_regex;
 
@@ -48,6 +48,13 @@ function preparsecode(&$message, $previewing = false)
 	// This line makes all languages *theoretically* work even with the wrong charset ;).
 	if (empty($context['utf8']))
 		$message = preg_replace('~&amp;#(\d{4,5}|[2-9]\d{2,4}|1[2-9]\d);~', '&#$1;', $message);
+
+	// Normalize Unicode characters for storage efficiency, better searching, etc.
+	else
+		$message = $smcFunc['normalize']($message);
+
+	// Clean out any other funky stuff.
+	$message = sanitize_chars($message, 0);
 
 	// Clean up after nobbc ;).
 	$message = preg_replace_callback(
@@ -471,8 +478,11 @@ function fixTag(&$message, $myTag, $protocols, $embeddedUrl = false, $hasEqualSi
 
 	if ($hasEqualSign && $embeddedUrl)
 	{
-		$quoted = preg_match('~\[(' . $myTag . ')=&quot;~', $message);
-		preg_match_all('~\[(' . $myTag . ')=' . ($quoted ? '&quot;(.*?)&quot;' : '([^\]]*?)') . '\](?:(.+?)\[/(' . $myTag . ')\])?~is', $message, $matches);
+		preg_match_all('~\[(' . $myTag . ')=(&quot;(?:[^&]|&(?!quot;))*?&quot;|[^\]]*?)\](?:(.+?)\[/(' . $myTag . ')\])?~is', $message, $matches);
+
+		foreach ($matches[2] as $key => $match) {
+			$matches[2][$key] = preg_replace('/^&quot;|&quot;$/', '', $match);
+		}
 	}
 	elseif ($hasEqualSign)
 		preg_match_all('~\[(' . $myTag . ')=([^\]]*?)\](?:(.+?)\[/(' . $myTag . ')\])?~is', $message, $matches);
@@ -494,7 +504,7 @@ function fixTag(&$message, $myTag, $protocols, $embeddedUrl = false, $hasEqualSi
 				break;
 		}
 
-		$current_protocol = strtolower(parse_url($replace, PHP_URL_SCHEME));
+		$current_protocol = strtolower(parse_iri($replace, PHP_URL_SCHEME) ?? "");
 
 		if (in_array($current_protocol, $forbidden_protocols))
 		{
@@ -566,7 +576,8 @@ function sendmail($to, $subject, $message, $from = null, $message_id = null, $se
 	$use_sendmail = empty($modSettings['mail_type']) || $modSettings['smtp_host'] == '';
 
 	// Line breaks need to be \r\n only in windows or for SMTP.
-	$line_break = $context['server']['is_windows'] || !$use_sendmail ? "\r\n" : "\n";
+	// Starting with php 8x, line breaks need to be \r\n even for linux.
+	$line_break = ($context['server']['is_windows'] || !$use_sendmail || version_compare(PHP_VERSION, '8.0.0', '>=')) ? "\r\n" : "\n";
 
 	// So far so good.
 	$mail_result = true;
@@ -635,9 +646,7 @@ function sendmail($to, $subject, $message, $from = null, $message_id = null, $se
 	$headers .= $from !== null ? 'Reply-To: <' . $from . '>' . $line_break : '';
 	$headers .= 'Return-Path: ' . (empty($modSettings['mail_from']) ? $webmaster_email : $modSettings['mail_from']) . $line_break;
 	$headers .= 'Date: ' . gmdate('D, d M Y H:i:s') . ' -0000' . $line_break;
-
-	if ($message_id !== null && empty($modSettings['mail_no_message_id']))
-		$headers .= 'Message-ID: <' . md5($scripturl . microtime()) . '-' . $message_id . strstr(empty($modSettings['mail_from']) ? $webmaster_email : $modSettings['mail_from'], '@') . '>' . $line_break;
+	$headers .= 'Message-ID: <' . md5($scripturl . microtime()) . '-' . ($message_id ?? 0) . strstr(empty($modSettings['mail_from']) ? $webmaster_email : $modSettings['mail_from'], '@') . '>' . $line_break;
 	$headers .= 'X-Mailer: SMF' . $line_break;
 
 	// Pass this to the integration before we start modifying the output -- it'll make it easier later.
@@ -1380,7 +1389,7 @@ function mimespecialchars($string, $with_charset = true, $hotmail_fix = false, $
  */
 function smtp_mail($mail_to_array, $subject, $message, $headers)
 {
-	global $modSettings, $webmaster_email, $txt, $boardurl;
+	global $modSettings, $webmaster_email, $txt, $boardurl, $sourcedir;
 
 	static $helo;
 
@@ -1445,11 +1454,16 @@ function smtp_mail($mail_to_array, $subject, $message, $headers)
 
 		// If the hostname isn't a fully qualified domain name, we can use the host name from $boardurl instead
 		if (empty($helo) || strpos($helo, '.') === false || substr_compare($helo, '.local', -6) === 0 || (!empty($modSettings['tld_regex']) && !preg_match('/\.' . $modSettings['tld_regex'] . '$/u', $helo)))
-			$helo = parse_url($boardurl, PHP_URL_HOST);
+			$helo = parse_iri($boardurl, PHP_URL_HOST);
 
 		// This is one of those situations where 'www.' is undesirable
 		if (strpos($helo, 'www.') === 0)
 			$helo = substr($helo, 4);
+
+		if (!function_exists('idn_to_ascii'))
+			require_once($sourcedir . '/Subs-Compat.php');
+
+		$helo = idn_to_ascii($helo, IDNA_DEFAULT, INTL_IDNA_VARIANT_UTS46);
 	}
 
 	// SMTP = 1, SMTP - STARTTLS = 2
@@ -1521,7 +1535,7 @@ function smtp_mail($mail_to_array, $subject, $message, $headers)
 			return false;
 		if (!server_parse('DATA', $socket, '354'))
 			return false;
-		fputs($socket, 'Subject: ' . $subject . "\r\n");
+		fputs($socket, 'Subject: ' . strtr($subject, ["\r" => '', "\n" => '']) . "\r\n");
 		if (strlen($mail_to) > 0)
 			fputs($socket, 'To: <' . $mail_to . '>' . "\r\n");
 		fputs($socket, $headers . "\r\n\r\n");
@@ -1579,9 +1593,18 @@ function server_parse($message, $socket, $code, &$response = null)
 	if ($code === null)
 		return substr($server_response, 0, 3);
 
-	if (substr($server_response, 0, 3) != $code)
+	$response_code = (int) substr($server_response, 0, 3);
+	if ($response_code != $code)
 	{
-		log_error($txt['smtp_error'] . $server_response);
+		// Ignoreable errors that we can't fix should not be logged.
+		/*
+		 * 550 - cPanel rejected sending due to DNS issues
+		 * 450 - DNS Routing issues
+		 * 451 - cPanel "Temporary local problem - please try later"
+		 */
+		if ($response_code < 500 && !in_array($response_code, array(450, 451)))
+			log_error($txt['smtp_error'] . $server_response);
+
 		return false;
 	}
 
@@ -2241,13 +2264,13 @@ function modifyPost(&$msgOptions, &$topicOptions, &$posterOptions)
 
 	if (!empty($quoted_modifications['added']))
 	{
-		$msgOptions['quoted_members'] = array_intersect_key($quoted_members, array_flip($quoted_modifications['added']));
+		$msgOptions['quoted_members'] = array_intersect_key($quoted_members, array_flip(array_keys($quoted_modifications['added'])));
 
 		// You don't need a notification about quoting yourself.
 		unset($msgOptions['quoted_members'][$user_info['id']]);
 	}
 
-	if (!empty($modSettings['enable_mentions']))
+	if (!empty($modSettings['enable_mentions']) && isset($msgOptions['body']))
 	{
 		$mentions = Mentions::getMentionedMembers($msgOptions['body']);
 		$messages_columns['body'] = $msgOptions['body'] = Mentions::getBody($msgOptions['body'], $mentions);
@@ -2259,7 +2282,7 @@ function modifyPost(&$msgOptions, &$topicOptions, &$posterOptions)
 		if (!empty($mention_modifications['added']))
 		{
 			// Queue this for notification.
-			$msgOptions['mentioned_members'] = array_intersect_key($mentions, array_flip($mention_modifications['added']));
+			$msgOptions['mentioned_members'] = array_intersect_key($mentions, array_flip(array_keys($mention_modifications['added'])));
 
 			// Mentioning yourself is silly, and we aren't going to notify you about it.
 			unset($msgOptions['mentioned_members'][$user_info['id']]);
@@ -2345,7 +2368,7 @@ function modifyPost(&$msgOptions, &$topicOptions, &$posterOptions)
 		$searchAPI->postModified($msgOptions, $topicOptions, $posterOptions);
 
 	// Send notifications about any new quotes or mentions.
-	if ($msgOptions['send_notifications'] && $msgOptions['approved'] && (!empty($msgOptions['quoted_members']) || !empty($msgOptions['mentioned_members'])))
+	if ($msgOptions['send_notifications'] && !empty($msgOptions['approved']) && (!empty($msgOptions['quoted_members']) || !empty($msgOptions['mentioned_members']) || !empty($mention_modifications['removed']) || !empty($quoted_modifications['removed'])))
 	{
 		$smcFunc['db_insert']('',
 			'{db_prefix}background_tasks',
@@ -2610,6 +2633,12 @@ function approvePosts($msgs, $approve = true, $notify = true)
 				'id_attach' => 0,
 			)
 		);
+
+		// Clean up moderator alerts
+		if (!empty($notification_topics))
+			clearApprovalAlerts(array_column($notification_topics, 'topic'), 'unapproved_topic');
+		if (!empty($notification_posts))
+			clearApprovalAlerts(array_column($notification_posts, 'id'), 'unapproved_post');
 	}
 	// If unapproving add to the approval queue!
 	else
@@ -2678,6 +2707,65 @@ function approveTopics($topics, $approve = true)
 	$smcFunc['db_free_result']($request);
 
 	return approvePosts($msgs, $approve);
+}
+
+/**
+ * Upon approval, clear unread alerts.
+ *
+ * @param int[] $content_ids either id_msgs or id_topics
+ * @param string $content_action will be either 'unapproved_post' or 'unapproved_topic'
+ * @return void
+ */
+function clearApprovalAlerts($content_ids, $content_action)
+{
+	global $smcFunc;
+
+	// Some data hygiene...
+	if (!is_array($content_ids))
+		return;
+	$content_ids = array_filter(array_map('intval', $content_ids));
+	if (empty($content_ids))
+		return;
+
+	if (!in_array($content_action, array('unapproved_post', 'unapproved_topic')))
+		return;
+
+	// Check to see if there are unread alerts to delete...
+	// Might be multiple alerts, for multiple moderators...
+	$alerts = array();
+	$moderators = array();
+	$result = $smcFunc['db_query']('', '
+		SELECT id_alert, id_member FROM {db_prefix}user_alerts
+		WHERE content_id IN ({array_int:content_ids})
+			AND content_type = {string:content_type}
+			AND content_action = {string:content_action}
+			AND is_read = {int:unread}',
+		array(
+			'content_ids' => $content_ids,
+			'content_type' => $content_action === 'unapproved_topic' ? 'topic' : 'msg',
+			'content_action' => $content_action,
+			'unread' => 0,
+		)
+	);
+	// Found any?
+	while ($row = $smcFunc['db_fetch_assoc']($result))
+	{
+		$alerts[] = $row['id_alert'];
+		$moderators[] = $row['id_member'];
+	}
+	if (!empty($alerts))
+	{
+		// Delete 'em
+		$smcFunc['db_query']('', '
+			DELETE FROM {db_prefix}user_alerts
+			WHERE id_alert IN ({array_int:alerts})',
+			array(
+				'alerts' => $alerts,
+			)
+		);
+		// Decrement counter for each moderator who received an alert
+		updateMemberData($moderators, array('alerts' => '-'));
+	}
 }
 
 /**

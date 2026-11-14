@@ -6,10 +6,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2025 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.7
  */
 
 /**
@@ -22,6 +22,11 @@ class Mentions
 	 * @var string The character used for mentioning users
 	 */
 	protected static $char = '@';
+
+	/**
+	 * @var string Regular expression matching BBC that can't contain mentions
+	 */
+	protected static $excluded_bbc_regex = '';
 
 	/**
 	 * Returns mentions for a specific content
@@ -39,7 +44,8 @@ class Mentions
 
 		$request = $smcFunc['db_query']('', '
 			SELECT mem.id_member, mem.real_name, mem.email_address, mem.id_group, mem.id_post_group, mem.additional_groups,
-				mem.lngfile, ment.id_member AS id_mentioned_by, ment.real_name AS mentioned_by_name
+				mem.lngfile, ment.id_member AS id_mentioned_by, ment.real_name AS mentioned_by_name,
+				FIND_IN_SET(ment.id_member, mem.pm_ignore_list) AS mentioned_by_ignored
 			FROM {db_prefix}mentions AS m
 				INNER JOIN {db_prefix}members AS mem ON (mem.id_member = m.id_mentioned)
 				INNER JOIN {db_prefix}members AS ment ON (ment.id_member = m.id_member)
@@ -62,6 +68,8 @@ class Mentions
 				'mentioned_by' => array(
 					'id' => $row['id_mentioned_by'],
 					'name' => $row['mentioned_by_name'],
+					// Note that PostgreSQL can return a lowercase t/f for FIND_IN_SET
+					'ignored' => !empty($row['mentioned_by_ignored']) && $row['mentioned_by_ignored'] != 'f',
 				),
 				'lngfile' => $row['lngfile'],
 			);
@@ -253,8 +261,11 @@ class Mentions
 		// preparse code does a few things which might mess with our parsing
 		$body = htmlspecialchars_decode(preg_replace('~<br\s*/?'.'>~', "\n", str_replace('&nbsp;', ' ', $body)), ENT_QUOTES);
 
-		// Remove quotes, we don't want to get double mentions.
-		$body = preg_replace('~\[quote[^\]]*\](?' . '>(?' . '>[^\[]|\[(?!/?quote[^\]]*\]))|(?0))*\[/quote\]~', '', $body);
+		if (empty(self::$excluded_bbc_regex))
+			self::setExcludedBbcRegex();
+
+		// Exclude the content of various BBCodes.
+		$body = preg_replace('~\[(' . self::$excluded_bbc_regex . ')[^\]]*\](?' . '>(?' . '>[^\[]|\[(?!/?\1[^\]]*\]))|(?0))*\[/\1\]~', '', $body);
 
 		$matches = array();
 		// Split before every Unicode character.
@@ -294,7 +305,7 @@ class Mentions
 			$count = count($match);
 
 			for ($i = 1; $i <= $count; $i++)
-				$names[] = $smcFunc['htmlspecialchars']($smcFunc['htmltrim'](implode('', array_slice($match, 0, $i))));
+				$names[] = $smcFunc['htmlspecialchars']($smcFunc['htmltrim'](implode('', array_slice($match, 0, $i))), ENT_QUOTES);
 		}
 
 		$names = array_unique($names);
@@ -313,8 +324,11 @@ class Mentions
 	 */
 	public static function getExistingMentions($body)
 	{
-		// Don't include mentions inside quotations.
-		$body = preg_replace('~\[quote[^\]]*\](?' . '>(?' . '>[^\[]|\[(?!/?quote[^\]]*\]))|(?0))*\[/quote\]~', '', $body);
+		if (empty(self::$excluded_bbc_regex))
+			self::setExcludedBbcRegex();
+
+		// Don't include mentions inside quotations, etc.
+		$body = preg_replace('~\[(' . self::$excluded_bbc_regex . ')[^\]]*\](?' . '>(?' . '>[^\[]|\[(?!/?\1[^\]]*\]))|(?0))*\[/\1\]~', '', $body);
 
 		$existing_mentions = array();
 
@@ -343,8 +357,11 @@ class Mentions
 		if (empty($body))
 			return array();
 
-		// Don't include mentions inside quotations.
-		$body = preg_replace('~\[quote[^\]]*\](?' . '>(?' . '>[^\[]|\[(?!/?quote[^\]]*\]))|(?0))*\[/quote\]~', '', $body);
+		if (empty(self::$excluded_bbc_regex))
+			self::setExcludedBbcRegex();
+
+		// Don't include mentions inside quotations, etc.
+		$body = preg_replace('~\[(' . self::$excluded_bbc_regex . ')[^\]]*\](?' . '>(?' . '>[^\[]|\[(?!/?\1[^\]]*\]))|(?0))*\[/\1\]~', '', $body);
 
 		foreach ($members as $member)
 		{
@@ -432,6 +449,29 @@ class Mentions
 		return $members;
 	}
 
+	/**
+	 * Builds a regular expression matching BBC that can't contain mentions.
+	 *
+	 * @static
+	 * @access protected
+	 */
+	protected static function setExcludedBbcRegex()
+	{
+		if (empty(self::$excluded_bbc_regex))
+		{
+			// Exclude quotes. We don't want to get double mentions.
+			$excluded_bbc = array('quote');
+
+			// Exclude everything with unparsed content.
+			foreach (parse_bbc(false) as $code)
+			{
+				if (!empty($code['type']) && in_array($code['type'], array('unparsed_content', 'unparsed_commas_content', 'unparsed_equals_content')))
+					$excluded_bbc[] = $code['tag'];
+			}
+
+			self::$excluded_bbc_regex = build_regex($excluded_bbc, '~');
+		}
+	}
 }
 
 ?>

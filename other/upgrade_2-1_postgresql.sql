@@ -496,10 +496,10 @@ INSERT INTO {$db_prefix}settings (variable, value) VALUES ('defaultMaxListItems'
 ---#
 
 ---# Adding new profile data export settings
-INSERT INTO {$db_prefix}settings (variable, value) VALUES ('export_dir', '{$boarddir}/exports');
-INSERT INTO {$db_prefix}settings (variable, value) VALUES ('export_expiry', '7');
-INSERT INTO {$db_prefix}settings (variable, value) VALUES ('export_min_diskspace_pct', '5');
-INSERT INTO {$db_prefix}settings (variable, value) VALUES ('export_rate', '250');
+INSERT INTO {$db_prefix}settings (variable, value) VALUES ('export_dir', '{$boarddir}/exports') ON CONFLICT DO NOTHING;
+INSERT INTO {$db_prefix}settings (variable, value) VALUES ('export_expiry', '7') ON CONFLICT DO NOTHING;
+INSERT INTO {$db_prefix}settings (variable, value) VALUES ('export_min_diskspace_pct', '5') ON CONFLICT DO NOTHING;
+INSERT INTO {$db_prefix}settings (variable, value) VALUES ('export_rate', '250') ON CONFLICT DO NOTHING;
 ---#
 
 ---# Adding settings for marking boards as read
@@ -560,7 +560,7 @@ if (!is_writable($custom_av_dir))
 }
 
 // If we already are using a custom dir, delete the predefined one.
-if ($custom_av_dir != $GLOBALS['boarddir'] .'/custom_avatar')
+if (realpath($custom_av_dir) != realpath($GLOBALS['boarddir'] .'/custom_avatar'))
 {
 	// Borrow custom_avatars index.php file.
 	if (!file_exists($custom_av_dir . '/index.php'))
@@ -594,7 +594,7 @@ if (!empty($modSettings['currentAttachmentUploadDir']) && !is_array($modSettings
 	$modSettings['attachmentUploadDir'] = @unserialize($modSettings['attachmentUploadDir']);
 
 // No need to do this if we already did it previously...
-if (empty($modSettings['json_done']))
+if (empty($modSettings['attachments_21_done']))
   $is_done = false;
 else
   $is_done = true;
@@ -721,6 +721,10 @@ unset($_GET['a']);
 ---}
 ---#
 
+---# Note attachment conversion complete
+INSERT INTO {$db_prefix}settings (variable, value) VALUES ('attachments_21_done', '1') ON CONFLICT DO NOTHING;
+---#
+
 ---# Fixing invalid sizes on attachments
 ---{
 $attachs = array();
@@ -755,40 +759,42 @@ if (!empty($attachs))
 
 ---# Fixing attachment directory setting...
 ---{
-if (!is_array($modSettings['attachmentUploadDir']) && is_dir($modSettings['attachmentUploadDir']))
+// If it's a directory or an array, ensure it is stored as a serialized string (prep for later serial_to_json conversion)
+// Also ensure currentAttachmentUploadDir is set even for single directories
+// Make sure to do it in memory and in db...
+if (empty($modSettings['json_done']))
 {
-	$smcFunc['db_query']('', '
-		UPDATE {db_prefix}settings
-		SET value = {string:attach_dir}
-		WHERE variable = {string:uploadDir}',
-		array(
-			'attach_dir' => json_encode(array(1 => $modSettings['attachmentUploadDir'])),
-			'uploadDir' => 'attachmentUploadDir'
-		)
-	);
-	$smcFunc['db_insert']('replace',
-		'{db_prefix}settings',
-		array('variable' => 'string', 'value' => 'string'),
-		array('currentAttachmentUploadDir', '1'),
-		array('variable')
-	);
-}
-elseif (empty($modSettings['json_done']))
-{
-	// Serialized maybe?
-	$array = is_array($modSettings['attachmentUploadDir']) ? $modSettings['attachmentUploadDir'] : @unserialize($modSettings['attachmentUploadDir']);
-	if ($array !== false)
+	if (!is_array($modSettings['attachmentUploadDir']) && is_dir($modSettings['attachmentUploadDir']))
 	{
+		$modSettings['attachmentUploadDir'] = serialize(array(1 => $modSettings['attachmentUploadDir']));
 		$smcFunc['db_query']('', '
 			UPDATE {db_prefix}settings
 			SET value = {string:attach_dir}
 			WHERE variable = {string:uploadDir}',
 			array(
-				'attach_dir' => json_encode($array),
+				'attach_dir' => $modSettings['attachmentUploadDir'],
 				'uploadDir' => 'attachmentUploadDir'
 			)
 		);
-
+		$smcFunc['db_insert']('replace',
+			'{db_prefix}settings',
+			array('variable' => 'string', 'value' => 'string'),
+			array('currentAttachmentUploadDir', '1'),
+			array('variable')
+		);
+	}
+	elseif (is_array($modSettings['attachmentUploadDir']))
+	{
+		$modSettings['attachmentUploadDir'] = serialize($modSettings['attachmentUploadDir']);
+		$smcFunc['db_query']('', '
+			UPDATE {db_prefix}settings
+			SET value = {string:attach_dir}
+			WHERE variable = {string:uploadDir}',
+			array(
+				'attach_dir' => $modSettings['attachmentUploadDir'],
+				'uploadDir' => 'attachmentUploadDir'
+			)
+		);
 		// Assume currentAttachmentUploadDir is already set
 	}
 }
@@ -805,7 +811,12 @@ ADD COLUMN IF NOT EXISTS status smallint NOT NULL default '0',
 ADD COLUMN IF NOT EXISTS id_member_acted int NOT NULL default '0',
 ADD COLUMN IF NOT EXISTS member_name_acted varchar(255) NOT NULL default '',
 ADD COLUMN IF NOT EXISTS time_acted int NOT NULL default '0',
-ADD COLUMN IF NOT EXISTS act_reason text NOT NULL;
+ADD COLUMN IF NOT EXISTS act_reason text NOT NULL default '';
+---#
+
+---# Adding new columns to log_group_requests - drop defaults now that existing rows have been set
+ALTER TABLE {$db_prefix}log_group_requests
+ALTER COLUMN act_reason DROP DEFAULT;
 ---#
 
 ---# Adjusting the indexes for log_group_requests
@@ -818,7 +829,12 @@ CREATE INDEX {$db_prefix}log_group_requests_id_member ON {$db_prefix}log_group_r
 /******************************************************************************/
 ---# Adding support for <credits> tag in package manager
 ALTER TABLE {$db_prefix}log_packages
-ADD COLUMN IF NOT EXISTS credits TEXT NOT NULL;
+ADD COLUMN IF NOT EXISTS credits TEXT NOT NULL default '';
+---#
+
+---# Adding support for <credits> - drop default now that existing rows have been set
+ALTER TABLE {$db_prefix}log_packages
+ALTER COLUMN credits DROP DEFAULT;
 ---#
 
 ---# Adding support for package hashes
@@ -995,7 +1011,7 @@ VALUES
 ---- Adding background tasks support
 /******************************************************************************/
 ---# Adding the sequence
-CREATE SEQUENCE {$db_prefix}background_tasks_seq;
+CREATE SEQUENCE IF NOT EXISTS {$db_prefix}background_tasks_seq;
 ---#
 
 ---# Adding the table
@@ -1111,7 +1127,7 @@ ADD COLUMN IF NOT EXISTS alerts int NOT NULL default '0';
 ---#
 
 ---# Adding the new table for alerts.
-CREATE SEQUENCE {$db_prefix}user_alerts_seq;
+CREATE SEQUENCE IF NOT EXISTS {$db_prefix}user_alerts_seq;
 
 CREATE TABLE IF NOT EXISTS {$db_prefix}user_alerts (
 	id_alert bigint DEFAULT nextval('{$db_prefix}user_alerts_seq'),
@@ -1184,7 +1200,7 @@ if (in_array('notify_regularity', $results))
 	$step_progress['name'] = 'Upgrading post notification settings';
 	$step_progress['current'] = $_GET['a'];
 
-	$limit = 100000;
+	$limit = 10000;
 	$is_done = false;
 
 	$request = $smcFunc['db_query']('', 'SELECT COUNT(*) FROM {db_prefix}members');
@@ -1198,7 +1214,7 @@ if (in_array('notify_regularity', $results))
 
 		// Skip errors here so we don't croak if the columns don't exist...
 		$request = $smcFunc['db_query']('', '
-			SELECT id_member, notify_regularity, notify_send_body, notify_types
+			SELECT id_member, notify_regularity, notify_send_body, notify_types, notify_announcements
 			FROM {db_prefix}members
 			ORDER BY id_member
 			LIMIT {int:start}, {int:limit}',
@@ -1213,8 +1229,9 @@ if (in_array('notify_regularity', $results))
 			while ($row = $smcFunc['db_fetch_assoc']($request))
 			{
 				$inserts[] = array($row['id_member'], 'msg_receive_body', !empty($row['notify_send_body']) ? 1 : 0);
-				$inserts[] = array($row['id_member'], 'msg_notify_pref', $row['notify_regularity']);
+				$inserts[] = array($row['id_member'], 'msg_notify_pref', intval($row['notify_regularity']) + 1);
 				$inserts[] = array($row['id_member'], 'msg_notify_type', $row['notify_types']);
+				$inserts[] = array($row['id_member'], 'announcements', !empty($row['notify_announcements']) ? 1 : 0);
 			}
 			$smcFunc['db_free_result']($request);
 		}
@@ -1239,10 +1256,79 @@ if (in_array('notify_regularity', $results))
 
 ---# Dropping old notification fields from the members table
 ALTER TABLE {$db_prefix}members
-	DROP notify_send_body,
-	DROP notify_types,
-	DROP notify_regularity,
-	DROP notify_announcements;
+	DROP IF EXISTS notify_send_body,
+	DROP IF EXISTS notify_types,
+	DROP IF EXISTS notify_regularity,
+	DROP IF EXISTS notify_announcements;
+---#
+
+---# Upgrading auto notify setting
+---{
+$_GET['a'] = isset($_GET['a']) ? (int) $_GET['a'] : 0;
+$step_progress['name'] = 'Upgrading auto notify setting';
+$step_progress['current'] = $_GET['a'];
+
+$limit = 10000;
+$is_done = false;
+
+$request = $smcFunc['db_query']('', '
+	SELECT COUNT(*)
+	FROM {db_prefix}themes
+	WHERE variable = {string:auto_notify}',
+	array(
+		'auto_notify' => 'auto_notify',
+	)
+);
+list($maxMembers) = $smcFunc['db_fetch_row']($request);
+$smcFunc['db_free_result']($request);
+
+while (!$is_done)
+{
+	nextSubStep($substep);
+	$inserts = array();
+
+	// This setting is stored over in the themes table in 2.0...
+	$request = $smcFunc['db_query']('', '
+		SELECT id_member, value
+		FROM {db_prefix}themes
+		WHERE variable = {string:auto_notify}
+		ORDER BY id_member
+		LIMIT {int:start}, {int:limit}',
+		array(
+			'auto_notify' => 'auto_notify',
+			'start' => $_GET['a'],
+			'limit' => $limit,
+		)
+	);
+	if ($smcFunc['db_num_rows']($request) != 0)
+	{
+		while ($row = $smcFunc['db_fetch_assoc']($request))
+		{
+			$inserts[] = array($row['id_member'], 'msg_auto_notify', !empty($row['value']) ? 1 : 0);
+		}
+		$smcFunc['db_free_result']($request);
+	}
+
+	$smcFunc['db_insert']('ignore',
+		'{db_prefix}user_alerts_prefs',
+		array('id_member' => 'int', 'alert_pref' => 'string', 'alert_value' => 'string'),
+		$inserts,
+		array('id_member', 'alert_pref')
+	);
+
+	$_GET['a'] += $limit;
+	$step_progress['current'] = $_GET['a'];
+
+	if ($step_progress['current'] >= $maxMembers)
+		$is_done = true;
+}
+unset($_GET['a']);
+---}
+---#
+
+---# Dropping old auto notify settings from the themes table
+DELETE FROM {$db_prefix}themes
+	WHERE variable = 'auto_notify';
 ---#
 
 ---# Creating alert prefs for watched topics
@@ -1251,7 +1337,7 @@ ALTER TABLE {$db_prefix}members
 	$step_progress['name'] = 'Creating alert preferences for watched topics';
 	$step_progress['current'] = $_GET['a'];
 
-	$limit = 100000;
+	$limit = 10000;
 	$is_done = false;
 
 	$request = $smcFunc['db_query']('', 'SELECT COUNT(*) FROM {db_prefix}log_notify WHERE id_member <> 0 AND id_topic <> 0');
@@ -1303,7 +1389,7 @@ ALTER TABLE {$db_prefix}members
 	$step_progress['name'] = 'Creating alert preferences for watched boards';
 	$step_progress['current'] = $_GET['a'];
 
-	$limit = 100000;
+	$limit = 10000;
 	$is_done = false;
 
 	$request = $smcFunc['db_query']('', 'SELECT COUNT(*) FROM {db_prefix}log_notify WHERE id_member <> 0 AND id_board <> 0');
@@ -1380,6 +1466,10 @@ FROM {$db_prefix}attachments AS f
 WHERE content_type = 'unapproved' AND content_action = 'attachment' AND f.id_attach = content_id;
 ---#
 
+---# Adding index on id_board to log_notify table
+CREATE INDEX {$db_prefix}log_notify_id_board ON {$db_prefix}log_notify (id_board);
+---#
+
 /******************************************************************************/
 --- Adding support for topic unwatch
 /******************************************************************************/
@@ -1390,7 +1480,7 @@ ADD COLUMN IF NOT EXISTS unwatched int NOT NULL DEFAULT 0;
 
 ---# Fixing column name change...
 ALTER TABLE {$db_prefix}log_topics
-DROP COLUMN disregarded;
+DROP COLUMN IF EXISTS disregarded;
 ---#
 
 /******************************************************************************/
@@ -1570,13 +1660,13 @@ ADD COLUMN IF NOT EXISTS show_mlist smallint NOT NULL default '0';
 
 ---# Insert fields
 INSERT INTO {$db_prefix}custom_fields (col_name, field_name, field_desc, field_type, field_length, field_options, field_order, mask, show_reg, show_display, show_mlist, show_profile, private, active, bbc, can_search, default_value, enclose, placement) VALUES
-('cust_icq', 'ICQ', 'This is your ICQ number.', 'text', 12, '', 1, 'regex~[1-9][0-9]{4,9}~i', 0, 1, 0, 'forumprofile', 0, 1, 0, 0, '', '<a class="icq" href="//www.icq.com/people/{INPUT}" target="_blank" rel="noopener" title="ICQ - {INPUT}"><img src="{DEFAULT_IMAGES_URL}/icq.png" alt="ICQ - {INPUT}"></a>', 1) ON CONFLICT DO NOTHING;
+('cust_icq', '{icq}', '{icq_desc}', 'text', 12, '', 1, 'regex~[1-9][0-9]{4,9}~i', 0, 1, 0, 'forumprofile', 0, 1, 0, 0, '', '<a class="icq" href="//www.icq.com/people/{INPUT}" target="_blank" rel="noopener" title="ICQ - {INPUT}"><img src="{DEFAULT_IMAGES_URL}/icq.png" alt="ICQ - {INPUT}"></a>', 1) ON CONFLICT DO NOTHING;
 INSERT INTO {$db_prefix}custom_fields (col_name, field_name, field_desc, field_type, field_length, field_options, field_order, mask, show_reg, show_display, show_mlist, show_profile, private, active, bbc, can_search, default_value, enclose, placement) VALUES
-('cust_skype', 'Skype', 'Your Skype name', 'text', 32, '', 2, 'nohtml', 0, 1, 0, 'forumprofile', 0, 1, 0, 0, '', '<a href="skype:{INPUT}?call"><img src="{DEFAULT_IMAGES_URL}/skype.png" alt="{INPUT}" title="{INPUT}" /></a> ', 1) ON CONFLICT DO NOTHING;
+('cust_skype', '{skype}', '{skype_desc}', 'text', 32, '', 2, 'nohtml', 0, 1, 0, 'forumprofile', 0, 1, 0, 0, '', '<a href="skype:{INPUT}?call"><img src="{DEFAULT_IMAGES_URL}/skype.png" alt="{INPUT}" title="{INPUT}" /></a> ', 1) ON CONFLICT DO NOTHING;
 INSERT INTO {$db_prefix}custom_fields (col_name, field_name, field_desc, field_type, field_length, field_options, field_order, mask, show_reg, show_display, show_mlist, show_profile, private, active, bbc, can_search, default_value, enclose, placement) VALUES
-('cust_loca', 'Location', 'Geographic location.', 'text', 50, '', 4, 'nohtml', 0, 1, 0, 'forumprofile', 0, 1, 0, 0, '', '', 0) ON CONFLICT DO NOTHING;
+('cust_loca', '{location}', '{location_desc}', 'text', 50, '', 4, 'nohtml', 0, 1, 0, 'forumprofile', 0, 1, 0, 0, '', '', 0) ON CONFLICT DO NOTHING;
 INSERT INTO {$db_prefix}custom_fields (col_name, field_name, field_desc, field_type, field_length, field_options, field_order, mask, show_reg, show_display, show_mlist, show_profile, private, active, bbc, can_search, default_value, enclose, placement) VALUES
-('cust_gender', 'Gender', 'Your gender.', 'radio', 255, 'None,Male,Female', 5, 'nohtml', 1, 1, 0, 'forumprofile', 0, 1, 0, 0, 'None', '<span class=" main_icons gender_{KEY}" title="{INPUT}"></span>', 1) ON CONFLICT DO NOTHING;
+('cust_gender', '{gender}', '{gender_desc}', 'radio', 255, '{gender_0},{gender_1},{gender_2}', 5, 'nohtml', 1, 1, 0, 'forumprofile', 0, 1, 0, 0, '{gender_0}', '<span class=" main_icons gender_{KEY}" title="{INPUT}"></span>', 1) ON CONFLICT DO NOTHING;
 ---#
 
 ---# Add an order value to each existing cust profile field.
@@ -1644,7 +1734,6 @@ if (!empty($select_columns))
 				'limit' => $limit,
 		));
 
-		$genderTypes = array(1 => 'Male', 2 => 'Female');
 		while ($row = $smcFunc['db_fetch_assoc']($request))
 		{
 			if (!empty($row['icq']))
@@ -1656,8 +1745,8 @@ if (!empty($select_columns))
 			if (!empty($row['location']))
 				$inserts[] = array($row['id_member'], 1, 'cust_loca', $row['location']);
 
-			if (!empty($row['gender']) && isset($genderTypes[INTval($row['gender'])]))
-				$inserts[] = array($row['id_member'], 1, 'cust_gender', $genderTypes[INTval($row['gender'])]);
+			if (!empty($row['gender']))
+				$inserts[] = array($row['id_member'], 1, 'cust_gender', '{gender_' . intval($row['gender']) . '}');
 		}
 		$smcFunc['db_free_result']($request);
 
@@ -1731,7 +1820,7 @@ ALTER TABLE {$db_prefix}members
 --- Adding support for drafts
 /******************************************************************************/
 ---# Creating drafts table.
-CREATE SEQUENCE {$db_prefix}user_drafts_seq;
+CREATE SEQUENCE IF NOT EXISTS {$db_prefix}user_drafts_seq;
 
 CREATE TABLE IF NOT EXISTS {$db_prefix}user_drafts (
 	id_draft bigint DEFAULT nextval('{$db_prefix}user_drafts_seq'),
@@ -1750,7 +1839,7 @@ CREATE TABLE IF NOT EXISTS {$db_prefix}user_drafts (
 	to_list varchar(255) NOT NULL DEFAULT '',
 	PRIMARY KEY (id_draft)
 );
-CREATE UNIQUE INDEX {$db_prefix}user_drafts_id_member ON {$db_prefix}user_drafts (id_member, id_draft, type);
+CREATE UNIQUE INDEX IF NOT EXISTS {$db_prefix}user_drafts_id_member ON {$db_prefix}user_drafts (id_member, id_draft, type);
 ---#
 
 ---# Adding draft permissions...
@@ -1829,7 +1918,7 @@ CREATE INDEX {$db_prefix}user_likes_content ON {$db_prefix}user_likes (content_i
 CREATE INDEX {$db_prefix}user_likes_liker ON {$db_prefix}user_likes (id_member);
 ---#
 
----# Adding count to the messages table.
+---# Adding likes column to the messages table. (May take a while)
 ALTER TABLE {$db_prefix}messages
 ADD COLUMN IF NOT EXISTS likes smallint NOT NULL default '0';
 ---#
@@ -1987,6 +2076,18 @@ WHERE variable IN ('show_board_desc', 'display_quick_reply', 'show_mark_read', '
 ---}
 ---#
 
+---# Adding new "samesiteCookies" setting
+---{
+	if (!isset($modSettings['samesiteCookies']))
+		$smcFunc['db_insert']('insert',
+			'{db_prefix}settings',
+			array('variable' => 'string', 'value' => 'string'),
+			array('samesiteCookies', 'lax'),
+			array()
+		);
+---}
+---#
+
 ---# Calculate appropriate hash cost
 ---{
 	$smcFunc['db_insert']('replace',
@@ -2036,7 +2137,7 @@ $smcFunc['db_free_result']($file_check);
 --- Upgrading "verification questions" feature
 /******************************************************************************/
 ---# Creating qanda table
-CREATE SEQUENCE {$db_prefix}qanda_seq;
+CREATE SEQUENCE IF NOT EXISTS {$db_prefix}qanda_seq;
 
 CREATE TABLE IF NOT EXISTS {$db_prefix}qanda (
 	id_question smallint DEFAULT nextval('{$db_prefix}qanda_seq'),
@@ -2152,6 +2253,86 @@ $request = upgrade_query("
 ---}
 ---#
 
+---# Adding "view_warning_own" and "view_warning_any" permissions
+---{
+if (isset($modSettings['warning_show']))
+{
+	$can_view_warning_own = array();
+	$can_view_warning_any = array();
+
+	if ($modSettings['warning_show'] >= 1)
+	{
+		$can_view_warning_own[] = 0;
+
+		$request = $smcFunc['db_query']('', '
+			SELECT id_group
+			FROM {db_prefix}membergroups
+			WHERE min_posts = {int:not_post_based}',
+			array(
+				'not_post_based' => -1,
+			)
+		);
+		while ($row = $smcFunc['db_fetch_assoc']($request))
+		{
+			if (in_array($row['id_group'], array(1, 3)))
+				continue;
+
+			$can_view_warning_own[] = $row['id_group'];
+		}
+		$smcFunc['db_free_result']($request);
+	}
+
+	if ($modSettings['warning_show'] > 1)
+		$can_view_warning_any = $can_view_warning_own;
+	else
+	{
+		$request = $smcFunc['db_query']('', '
+			SELECT id_group, add_deny
+			FROM {db_prefix}permissions
+			WHERE permission = {string:perm}',
+			array(
+				'perm' => 'issue_warning',
+			)
+		);
+		while ($row = $smcFunc['db_fetch_assoc']($request))
+		{
+			if (in_array($row['id_group'], array(-1, 1, 3)) || $row['add_deny'] != 1)
+				continue;
+
+			$can_view_warning_any[] = $row['id_group'];
+		}
+		$smcFunc['db_free_result']($request);
+	}
+
+	$inserts = array();
+
+	foreach ($can_view_warning_own as $id_group)
+		$inserts[] = array($id_group, 'view_warning_own', 1);
+
+	foreach ($can_view_warning_any as $id_group)
+		$inserts[] = array($id_group, 'view_warning_any', 1);
+
+	if (!empty($inserts))
+	{
+		$smcFunc['db_insert']('ignore',
+			'{db_prefix}permissions',
+			array('id_group' => 'int', 'permission' => 'string', 'add_deny' => 'int'),
+			$inserts,
+			array('id_group', 'permission')
+		);
+	}
+
+	$smcFunc['db_query']('', '
+		DELETE FROM {db_prefix}settings
+		WHERE variable = {string:warning_show}',
+		array(
+			'warning_show' => 'warning_show',
+		)
+	);
+}
+---}
+---#
+
 ---# Adding other profile permissions
 ---{
 $inserts = array();
@@ -2188,7 +2369,7 @@ $request = upgrade_query("
 --- Upgrading PM labels...
 /******************************************************************************/
 ---# Creating pm_labels sequence...
-CREATE SEQUENCE {$db_prefix}pm_labels_seq;
+CREATE SEQUENCE IF NOT EXISTS {$db_prefix}pm_labels_seq;
 ---#
 
 ---# Adding pm_labels table...
@@ -2213,163 +2394,228 @@ ALTER TABLE {$db_prefix}pm_recipients
 ADD COLUMN IF NOT EXISTS in_inbox smallint NOT NULL default '1';
 ---#
 
----# Moving label info to new tables and updating rules...
+---# Moving label info to new tables and updating rules (May be slow!!!)
 ---{
 	// First see if we still have a message_labels column
 	$results = $smcFunc['db_list_columns']('{db_prefix}members');
 	if (in_array('message_labels', $results))
 	{
-		// They've still got it, so pull the label info
-		$get_labels = $smcFunc['db_query']('', '
-			SELECT id_member, message_labels
+		$_GET['a'] = isset($_GET['a']) ? (int) $_GET['a'] : 0;
+		$step_progress['name'] = 'Moving pm labels';
+		$step_progress['current'] = $_GET['a'];
+
+		$request = $smcFunc['db_query']('', '
+			SELECT COUNT(*)
 			FROM {db_prefix}members
 			WHERE message_labels != {string:blank}',
 			array(
 				'blank' => '',
 			)
 		);
+		list($maxMembers) = $smcFunc['db_fetch_row']($request);
+		$smcFunc['db_free_result']($request);
 
-		$inserts = array();
-		$label_info = array();
-		while ($row = $smcFunc['db_fetch_assoc']($get_labels))
+		if ($maxMembers > 0)
 		{
-			// Stick this in an array
-			$labels = explode(',', $row['message_labels']);
+			$limit = 5000;
+			$is_done = false;
 
-			// Build some inserts
-			foreach ($labels AS $index => $label)
+			while (!$is_done)
 			{
-				// Keep track of the index of this label - we'll need that in a bit...
-				$label_info[$row['id_member']][$label] = $index;
-			}
-		}
+				nextSubStep($substep);
+				$inserts = array();
 
-		$smcFunc['db_free_result']($get_labels);
+				// Pull the label info
+				$get_labels = $smcFunc['db_query']('', '
+					SELECT id_member, message_labels
+					FROM {db_prefix}members
+					WHERE message_labels != {string:blank}
+					ORDER BY id_member
+					LIMIT {int:start}, {int:limit}',
+					array(
+						'blank' => '',
+						'start' => $_GET['a'],
+						'limit' => $limit,
+					)
+				);
 
-		foreach ($label_info AS $id_member => $labels)
-		{
-			foreach ($labels as $label => $index)
-			{
-				$inserts[] = array($id_member, $label);
-			}
-		}
-
-		if (!empty($inserts))
-		{
-			$smcFunc['db_insert']('', '{db_prefix}pm_labels', array('id_member' => 'int', 'name' => 'string-30'), $inserts, array());
-
-			// Clear this out for our next query below
-			$inserts = array();
-		}
-
-		// This is the easy part - update the inbox stuff
-		$smcFunc['db_query']('', '
-			UPDATE {db_prefix}pm_recipients
-			SET in_inbox = {int:in_inbox}
-			WHERE FIND_IN_SET({int:minusone}, labels) > 0',
-			array(
-				'in_inbox' => 1,
-				'minusone' => -1,
-			)
-		);
-
-		// Now we go pull the new IDs for each label
-		$get_new_label_ids = $smcFunc['db_query']('', '
-			SELECT *
-			FROM {db_prefix}pm_labels',
-			array(
-			)
-		);
-
-		$label_info_2 = array();
-		while ($label_row = $smcFunc['db_fetch_assoc']($get_new_label_ids))
-		{
-			// Map the old index values to the new ID values...
-			$old_index = $label_info[$label_row['id_member']][$label_row['name']];
-			$label_info_2[$label_row['id_member']][$old_index] = $label_row['id_label'];
-		}
-
-		$smcFunc['db_free_result']($get_new_label_ids);
-
-		// Pull label info from pm_recipients
-		// Ignore any that are only in the inbox
-		$get_pm_labels = $smcFunc['db_query']('', '
-			SELECT id_pm, id_member, labels
-			FROM {db_prefix}pm_recipients
-			WHERE deleted = {int:not_deleted}
-				AND labels != {string:minus_one}',
-			array(
-				'not_deleted' => 0,
-				'minus_one' => -1,
-			)
-		);
-
-		while ($row = $smcFunc['db_fetch_assoc']($get_pm_labels))
-		{
-			$labels = explode(',', $row['labels']);
-
-			foreach ($labels as $a_label)
-			{
-				if ($a_label == '-1')
-					continue;
-
-				$new_label_info = $label_info_2[$row['id_member']][$a_label];
-				$inserts[] = array($row['id_pm'], $new_label_info);
-			}
-		}
-
-		$smcFunc['db_free_result']($get_pm_labels);
-
-		// Insert the new data
-		if (!empty($inserts))
-		{
-			$smcFunc['db_insert']('', '{db_prefix}pm_labeled_messages', array('id_pm' => 'int', 'id_label' => 'int'), $inserts, array());
-		}
-
-		// Final step of this ridiculously massive process
-		$get_pm_rules = $smcFunc['db_query']('', '
-			SELECT id_member, id_rule, actions
-			FROM {db_prefix}pm_rules',
-			array(
-			)
-		);
-
-		// Go through the rules, unserialize the actions, then figure out if there's anything we can use
-		while ($row = $smcFunc['db_fetch_assoc']($get_pm_rules))
-		{
-			// Turn this into an array...
-			$actions = unserialize($row['actions']);
-
-			// Loop through the actions and see if we're applying a label anywhere
-			foreach ($actions as $index => $action)
-			{
-				if ($action['t'] == 'lab')
+				$label_info = array();
+				$member_list = array();
+				while ($row = $smcFunc['db_fetch_assoc']($get_labels))
 				{
-					// Update the value of this label...
-					$actions[$index]['v'] = $label_info_2[$row['id_member']][$action['v']];
+					$member_list[] = $row['id_member'];
+
+					// Stick this in an array
+					$labels = explode(',', $row['message_labels']);
+
+					// Build some inserts
+					foreach ($labels AS $index => $label)
+					{
+						// Keep track of the index of this label - we'll need that in a bit...
+						$label_info[$row['id_member']][$label] = $index;
+					}
 				}
+
+				$smcFunc['db_free_result']($get_labels);
+
+				foreach ($label_info AS $id_member => $labels)
+				{
+					foreach ($labels as $label => $index)
+					{
+						$inserts[] = array($id_member, $label);
+					}
+				}
+
+				if (!empty($inserts))
+				{
+					$smcFunc['db_insert']('', '{db_prefix}pm_labels', array('id_member' => 'int', 'name' => 'string-30'), $inserts, array());
+
+					// Clear this out for our next query below
+					$inserts = array();
+				}
+
+				// This is the easy part - update the inbox stuff
+				$smcFunc['db_query']('', '
+					UPDATE {db_prefix}pm_recipients
+					SET in_inbox = {int:in_inbox}
+					WHERE FIND_IN_SET({int:minusone}, labels) > 0
+						AND id_member IN ({array_int:member_list})',
+					array(
+						'in_inbox' => 1,
+						'minusone' => -1,
+						'member_list' => $member_list,
+					)
+				);
+
+				// Now we go pull the new IDs for each label
+				$get_new_label_ids = $smcFunc['db_query']('', '
+					SELECT *
+					FROM {db_prefix}pm_labels
+					WHERE id_member IN ({array_int:member_list})',
+					array(
+						'member_list' => $member_list,
+					)
+				);
+
+				$label_info_2 = array();
+				while ($label_row = $smcFunc['db_fetch_assoc']($get_new_label_ids))
+				{
+					// Map the old index values to the new ID values...
+					$old_index = $label_info[$label_row['id_member']][$label_row['name']];
+					$label_info_2[$label_row['id_member']][$old_index] = $label_row['id_label'];
+				}
+
+				$smcFunc['db_free_result']($get_new_label_ids);
+
+				// Pull label info from pm_recipients
+				// Ignore any that are only in the inbox
+				$get_pm_labels = $smcFunc['db_query']('', '
+					SELECT id_pm, id_member, labels
+					FROM {db_prefix}pm_recipients
+					WHERE deleted = {int:not_deleted}
+						AND labels != {string:minus_one}
+						AND id_member IN ({array_int:member_list})',
+					array(
+						'not_deleted' => 0,
+						'minus_one' => -1,
+						'member_list' => $member_list,
+					)
+				);
+
+				while ($row = $smcFunc['db_fetch_assoc']($get_pm_labels))
+				{
+					$labels = explode(',', $row['labels']);
+
+					foreach ($labels as $a_label)
+					{
+						if ($a_label == '-1')
+							continue;
+
+						$new_label_info = $label_info_2[$row['id_member']][$a_label];
+						$inserts[] = array($row['id_pm'], $new_label_info);
+					}
+				}
+
+				$smcFunc['db_free_result']($get_pm_labels);
+
+				// Insert the new data
+				if (!empty($inserts))
+				{
+					$smcFunc['db_insert']('', '{db_prefix}pm_labeled_messages', array('id_pm' => 'int', 'id_label' => 'int'), $inserts, array());
+				}
+
+				// Final step of this ridiculously massive process
+				$get_pm_rules = $smcFunc['db_query']('', '
+					SELECT id_member, id_rule, actions
+					FROM {db_prefix}pm_rules
+					WHERE id_member IN ({array_int:member_list})',
+					array(
+						'member_list' => $member_list,
+					)
+				);
+
+				// Go through the rules, unserialize the actions, then figure out if there's anything we can use
+				while ($row = $smcFunc['db_fetch_assoc']($get_pm_rules))
+				{
+					$updated = false;
+
+					// Turn this into an array...
+					$actions = unserialize($row['actions']);
+
+					// Loop through the actions and see if we're applying a label anywhere
+					foreach ($actions as $index => $action)
+					{
+						if ($action['t'] == 'lab')
+						{
+							// Update the value of this label...
+							$actions[$index]['v'] = $label_info_2[$row['id_member']][$action['v']];
+							$updated = true;
+						}
+					}
+
+					if ($updated)
+					{
+						// Put this back into a string
+						$actions = serialize($actions);
+
+						$smcFunc['db_query']('', '
+							UPDATE {db_prefix}pm_rules
+							SET actions = {string:actions}
+							WHERE id_rule = {int:id_rule}',
+							array(
+								'actions' => $actions,
+								'id_rule' => $row['id_rule'],
+							)
+						);
+					}
+				}
+
+				// Remove processed pm labels, to avoid duplicated data if upgrader is restarted.
+				$smcFunc['db_query']('', '
+					UPDATE {db_prefix}members
+					SET message_labels = {string:blank}
+					WHERE id_member IN ({array_int:member_list})',
+					array(
+						'blank' => '',
+						'member_list' => $member_list,
+					)
+				);
+
+				$smcFunc['db_free_result']($get_pm_rules);
+
+				$_GET['a'] += $limit;
+				$step_progress['current'] = $_GET['a'];
+
+				if ($step_progress['current'] >= $maxMembers)
+					$is_done = true;
 			}
-
-			// Put this back into a string
-			$actions = serialize($actions);
-
-			$smcFunc['db_query']('', '
-				UPDATE {db_prefix}pm_rules
-				SET actions = {string:actions}
-				WHERE id_rule = {int:id_rule}',
-				array(
-					'actions' => $actions,
-					'id_rule' => $row['id_rule'],
-				)
-			);
 		}
-
-		$smcFunc['db_free_result']($get_pm_rules);
 
 		// Lastly, we drop the old columns
 		$smcFunc['db_remove_column']('{db_prefix}members', 'message_labels');
 		$smcFunc['db_remove_column']('{db_prefix}pm_recipients', 'labels');
 	}
+	unset($_GET['a']);
 ---}
 ---#
 
@@ -2454,7 +2700,38 @@ ADD COLUMN IF NOT EXISTS modified_reason varchar(255) NOT NULL default '';
 --- Adding timezone support
 /******************************************************************************/
 ---# Adding the "timezone" column to the members table
-ALTER TABLE {$db_prefix}members ADD timezone VARCHAR(80) NOT NULL DEFAULT 'UTC';
+ALTER TABLE {$db_prefix}members ADD IF NOT EXISTS timezone VARCHAR(80) NOT NULL DEFAULT '';
+---#
+
+---# Converting time offset to timezone
+---{
+	if (!empty($modSettings['time_offset']))
+	{
+		$modSettings['default_timezone'] = empty($modSettings['default_timezone']) || !in_array($modSettings['default_timezone'], timezone_identifiers_list(DateTimeZone::ALL_WITH_BC)) ? 'UTC' : $modSettings['default_timezone'];
+
+		$now = date_create('now', timezone_open($modSettings['default_timezone']));
+
+		if (($new_tzid = timezone_name_from_abbr('', date_offset_get($now) + $modSettings['time_offset'] * 3600, date_format($now, 'I'))) !== false)
+		{
+			$smcFunc['db_insert']('replace',
+				'{db_prefix}settings',
+				array('variable' => 'string-255', 'value' => 'string'),
+				array(
+					array('default_timezone', $new_tzid),
+				),
+				array('variable')
+			);
+
+			$modSettings['default_timezone'] = $new_tzid;
+		}
+
+		$smcFunc['db_query']('', '
+			DELETE FROM {db_prefix}settings
+			WHERE variable = {literal:time_offset}',
+			array()
+		);
+	}
+---}
 ---#
 
 /******************************************************************************/
@@ -2583,11 +2860,13 @@ ADD COLUMN IF NOT EXISTS tfa_required smallint NOT NULL default '0';
 ---# DROP INDEX to members
 DROP INDEX IF EXISTS {$db_prefix}members_member_name_low;
 DROP INDEX IF EXISTS {$db_prefix}members_real_name_low;
+DROP INDEX IF EXISTS {$db_prefix}members_active_real_name;
 ---#
 
 ---# ADD INDEX to members
 CREATE INDEX {$db_prefix}members_member_name_low ON {$db_prefix}members (LOWER(member_name) varchar_pattern_ops);
 CREATE INDEX {$db_prefix}members_real_name_low ON {$db_prefix}members (LOWER(real_name) varchar_pattern_ops);
+CREATE INDEX {$db_prefix}members_active_real_name ON {$db_prefix}members (is_activated, real_name);
 ---#
 
 /******************************************************************************/
@@ -3002,8 +3281,70 @@ CREATE INDEX {$db_prefix}log_comments_comment_type ON {$db_prefix}log_comments (
 ---#
 
 /******************************************************************************/
---- drop col pm_email_notify from members
+--- Migrating pm notification settings
 /******************************************************************************/
+---# Upgrading pm notification settings
+---{
+// First see if we still have a pm_email_notify column
+$results = $smcFunc['db_list_columns']('{db_prefix}members');
+if (in_array('pm_email_notify', $results))
+{
+	$_GET['a'] = isset($_GET['a']) ? (int) $_GET['a'] : 0;
+	$step_progress['name'] = 'Upgrading pm notification settings';
+	$step_progress['current'] = $_GET['a'];
+
+	$limit = 10000;
+	$is_done = false;
+
+	$request = $smcFunc['db_query']('', 'SELECT COUNT(*) FROM {db_prefix}members');
+	list($maxMembers) = $smcFunc['db_fetch_row']($request);
+	$smcFunc['db_free_result']($request);
+
+	while (!$is_done)
+	{
+		nextSubStep($substep);
+		$inserts = array();
+
+		// Skip errors here so we don't croak if the columns don't exist...
+		$request = $smcFunc['db_query']('', '
+			SELECT id_member, pm_email_notify
+			FROM {db_prefix}members
+			ORDER BY id_member
+			LIMIT {int:start}, {int:limit}',
+			array(
+				'db_error_skip' => true,
+				'start' => $_GET['a'],
+				'limit' => $limit,
+			)
+		);
+		if ($smcFunc['db_num_rows']($request) != 0)
+		{
+			while ($row = $smcFunc['db_fetch_assoc']($request))
+			{
+				$inserts[] = array($row['id_member'], 'pm_new', !empty($row['pm_email_notify']) ? 2 : 0);
+				$inserts[] = array($row['id_member'], 'pm_notify', $row['pm_email_notify'] == 2 ? 2 : 1);
+			}
+			$smcFunc['db_free_result']($request);
+		}
+
+		$smcFunc['db_insert']('ignore',
+			'{db_prefix}user_alerts_prefs',
+			array('id_member' => 'int', 'alert_pref' => 'string', 'alert_value' => 'string'),
+			$inserts,
+			array('id_member', 'alert_pref')
+		);
+
+		$_GET['a'] += $limit;
+		$step_progress['current'] = $_GET['a'];
+
+		if ($step_progress['current'] >= $maxMembers)
+			$is_done = true;
+	}
+	unset($_GET['a']);
+}
+---}
+---#
+
 ---# drop column pm_email_notify on table members
 ALTER TABLE {$db_prefix}members DROP COLUMN IF EXISTS pm_email_notify;
 ---#
@@ -3040,6 +3381,18 @@ CREATE INDEX {$db_prefix}members_birthdate2 ON {$db_prefix}members (indexable_mo
 ---# Add Index for messages likes
 DROP INDEX IF EXISTS {$db_prefix}messages_likes;
 CREATE INDEX {$db_prefix}messages_likes ON {$db_prefix}messages (likes);
+---#
+
+/******************************************************************************/
+--- Create index for messages board, msg, approved
+/******************************************************************************/
+---# Remove old approved index
+DROP INDEX IF EXISTS {$db_prefix}messages_approved;
+---#
+
+---# Add Index for messages board, msg, approved
+DROP INDEX IF EXISTS {$db_prefix}messages_id_board;
+CREATE UNIQUE INDEX {$db_prefix}messages_id_board ON {$db_prefix}messages (id_board, id_msg, approved);
 ---#
 
 /******************************************************************************/
@@ -3823,27 +4176,109 @@ foreach($files AS $filename)
 
 ---# Fix missing values in log_actions
 ---{
-// Find the missing id_members
-$request = upgrade_query("
-	SELECT id_action, extra
-		FROM {$db_prefix}log_actions
-		WHERE id_member = 0
-		AND action IN ('policy_accepted', 'agreement_accepted')");
+	$current_substep = !isset($_GET['substep']) ? 0 : (int) $_GET['substep'];
 
-// Fortunately they're in the extra field
-while ($row = $smcFunc['db_fetch_assoc']($request))
-{
-	$extra = @unserialize($row['extra']);
-	if ($extra === false)
-		continue;
-	if (!empty($extra['applicator']))
+	// Setup progress bar
+	if (!isset($_GET['total_fixes']) || !isset($_GET['a']) || !isset($_GET['last_action_id']))
 	{
-		upgrade_query("
-			UPDATE {$db_prefix}log_actions
-				SET id_member = " . $extra['applicator'] . "
-				WHERE id_action = " . $row['id_action']);
-	}
-}
+		$request = $smcFunc['db_query']('', '
+			SELECT COUNT(*)
+				FROM {db_prefix}log_actions
+				WHERE id_member = {int:blank_id}
+				AND action IN ({array_string:target_actions})',
+			array(
+				'blank_id' => 0,
+				'target_actions' => array('policy_accepted', 'agreement_accepted'),
+			)
+		);
+		list ($step_progress['total']) = $smcFunc['db_fetch_row']($request);
+		$_GET['total_fixes'] = $step_progress['total'];
+		$smcFunc['db_free_result']($request);
 
+		$_GET['a'] = 0;
+		$_GET['last_action_id'] = 0;
+	}
+
+	$step_progress['name'] = 'Fixing missing IDs in log_actions';
+	$step_progress['current'] = $_GET['a'];
+	$step_progress['total'] = $_GET['total_fixes'];
+
+	// Main process loop
+	$limit = 10000;
+	$is_done = false;
+	while (!$is_done)
+	{
+		// Keep looping at the current step.
+		nextSubstep($current_substep);
+
+		$extras = array();
+		$request = $smcFunc['db_query']('', '
+			SELECT id_action, extra
+				FROM {db_prefix}log_actions
+				WHERE id_member = {int:blank_id}
+				AND action IN ({array_string:target_actions})
+				AND id_action >  {int:last}
+				ORDER BY id_action
+				LIMIT {int:limit}',
+			array(
+				'blank_id' => 0,
+				'target_actions' => array('policy_accepted', 'agreement_accepted'),
+				'last' => $_GET['last_action_id'],
+				'limit' => $limit,
+			)
+		);
+		while ($row = $smcFunc['db_fetch_assoc']($request))
+			$extras[$row['id_action']] = $row['extra'];
+		$smcFunc['db_free_result']($request);
+
+		if (empty($extras))
+			$is_done = true;
+		else
+			$_GET['last_action_id'] = max(array_keys($extras));
+
+		foreach ($extras AS $id => $extra_ser)
+		{
+			$extra = upgrade_unserialize($extra_ser);
+			if ($extra === false)
+				continue;
+
+			if (!empty($extra['applicator']))
+			{
+				$request = $smcFunc['db_query']('', '
+					UPDATE {db_prefix}log_actions
+						SET id_member = {int:id_member}
+						WHERE id_action = {int:id_action}',
+					array(
+						'id_member' => $extra['applicator'],
+						'id_action' => $id,
+					)
+				);
+			}
+		}
+		$_GET['a'] += $limit;
+		$step_progress['current'] = $_GET['a'];
+	}
+
+	$step_progress = array();
+	unset($_GET['a']);
+	unset($_GET['last_action_id']);
+	unset($_GET['total_fixes']);
 ---}
+---#
+
+/******************************************************************************/
+--- Improving search results storage
+/******************************************************************************/
+
+---# Updating primary key for log_search_results table
+ALTER TABLE {$db_prefix}log_search_results DROP CONSTRAINT {$db_prefix}log_search_results_pkey;
+ALTER TABLE {$db_prefix}log_search_results ADD PRIMARY KEY (id_search, id_topic, id_msg);
+---#
+
+/******************************************************************************/
+--- Extending validation code
+/******************************************************************************/
+
+---# Updating validation_code
+ALTER TABLE {$db_prefix}members ALTER COLUMN validation_code TYPE varchar(32);
 ---#

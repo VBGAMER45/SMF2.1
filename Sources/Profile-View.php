@@ -5,10 +5,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -25,7 +25,7 @@ function summary($memID)
 
 	// Attempt to load the member's profile data.
 	if (!loadMemberContext($memID) || !isset($memberContext[$memID]))
-		fatal_lang_error('not_a_user', false, 404);
+		fatal_lang_error('not_a_user', false, array(), 404);
 
 	// Set up the stuff and load the user.
 	$context += array(
@@ -46,7 +46,7 @@ function summary($memID)
 	// Menu tab
 	$context[$context['profile_menu_name']]['tab_data'] = array(
 		'title' => $txt['summary'],
-		'icon' => 'profile_hd.png'
+		'icon_class' => 'main_icons profile_hd'
 	);
 
 	// See if they have broken any warning levels...
@@ -76,7 +76,7 @@ function summary($memID)
 	else
 	{
 		list ($birth_year, $birth_month, $birth_day) = sscanf($context['member']['birth_date'], '%d-%d-%d');
-		$datearray = getdate(forum_time());
+		$datearray = getdate(time());
 		$context['member'] += array(
 			'age' => $birth_year <= 1004 ? $txt['not_applicable'] : $datearray['year'] - $birth_year - (($datearray['mon'] > $birth_month || ($datearray['mon'] == $birth_month && $datearray['mday'] >= $birth_day)) ? 0 : 1),
 			'today_is_birthday' => $datearray['mon'] == $birth_month && $datearray['mday'] == $birth_day && $birth_year > 1004
@@ -86,7 +86,7 @@ function summary($memID)
 	if (allowedTo('moderate_forum'))
 	{
 		// Make sure it's a valid ip address; otherwise, don't bother...
-		if (preg_match('/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/', $memberContext[$memID]['ip']) == 1 && empty($modSettings['disableHostnameLookup']))
+		if (filter_var($memberContext[$memID]['ip'], FILTER_VALIDATE_IP) && empty($modSettings['disableHostnameLookup']))
 			$context['member']['hostname'] = host_from_ip($memberContext[$memID]['ip']);
 		else
 			$context['member']['hostname'] = '';
@@ -98,7 +98,7 @@ function summary($memID)
 
 	// Are they hidden?
 	$context['member']['is_hidden'] = empty($user_profile[$memID]['show_online']);
-	$context['member']['show_last_login'] = allowedTo('admin_forum') || !$context['member']['is_hidden'];
+	$context['member']['show_last_login'] = allowedTo('moderate_forum') || !$context['member']['is_hidden'];
 
 	if (!empty($modSettings['who_enabled']) && $context['member']['show_last_login'])
 	{
@@ -124,7 +124,8 @@ function summary($memID)
 		createToken($context['token_check'], 'get');
 
 		// Puerile comment
-		$context['activate_link'] = $scripturl . '?action=admin;area=viewmembers;sa=browse;type=approve;' . $context['session_var'] . '=' . $context['session_id'] . ';' . $context[$context['token_check'] . '_token_var'] . '=' . $context[$context['token_check'] . '_token'];
+		$type = in_array($context['member']['is_activated'], array(3, 4, 5, 13, 14, 15)) ? 'approve' : 'activate';
+		$context['activate_link'] = $scripturl . '?action=admin;area=viewmembers;sa=browse;type=' . $type . ';' . $context['session_var'] . '=' . $context['session_id'] . ';' . $context[$context['token_check'] . '_token_var'] . '=' . $context[$context['token_check'] . '_token'];
 	}
 
 	// Is the signature even enabled on this forum?
@@ -236,7 +237,10 @@ function fetch_alerts($memID, $to_fetch = false, $limit = 0, $offset = 0, $with_
 	// Basic sanitation.
 	$memID = (int) $memID;
 	$unread = $to_fetch === false;
-	$limit = max(0, (int) $limit);
+
+	if (empty($limit) || $limit > 1000)
+		$limit = min(!empty($modSettings['alerts_per_page']) && (int) $modSettings['alerts_per_page'] < 1000 ? (int) $modSettings['alerts_per_page'] : 1000, 1000);
+
 	$offset = !empty($alertIDs) ? 0 : max(0, (int) $offset);
 	$with_avatar = !empty($with_avatar);
 	$show_links = !empty($show_links);
@@ -455,12 +459,21 @@ function fetch_alerts($memID, $to_fetch = false, $limit = 0, $offset = 0, $with_
 		else
 			unset($alerts[$id_alert]['visible']);
 
+		// For developer convenience.
+		$alert = &$alerts[$id_alert];
+
+		// If we loaded the sender's profile, we may as well use it.
+		$sender_id = !empty($alert['sender_id']) ? $alert['sender_id'] : 0;
+		if (isset($user_profile[$sender_id]))
+			$alert['sender_name'] = $user_profile[$sender_id]['real_name'];
+
+		// If requested, include the sender's avatar data.
+		if ($with_avatar && !empty($senders[$sender_id]))
+			$alert['sender'] = $senders[$sender_id];
+
 		// Did a mod already take care of this one?
 		if (!empty($alerts[$id_alert]['text']))
 			continue;
-
-		// For developer convenience.
-		$alert = &$alerts[$id_alert];
 
 		// The info in extra might outdated if the topic was moved, the message's subject was changed, etc.
 		if (!empty($alert['content_data']))
@@ -514,15 +527,6 @@ function fetch_alerts($memID, $to_fetch = false, $limit = 0, $offset = 0, $with_
 			if (isset($user_profile[$alert['extra']['user_id']]))
 				$alert['extra']['user_name'] = $user_profile[$alert['extra']['user_id']]['real_name'];
 		}
-
-		// If we loaded the sender's profile, we may as well use it.
-		$sender_id = !empty($alert['sender_id']) ? $alert['sender_id'] : 0;
-		if (isset($user_profile[$sender_id]))
-			$alert['sender_name'] = $user_profile[$sender_id]['real_name'];
-
-		// If requested, include the sender's avatar data.
-		if ($with_avatar && !empty($senders[$sender_id]))
-			$alert['sender'] = $senders[$sender_id];
 
 		// Next, build the message strings.
 		foreach ($formats as $msg_type => $format_info)
@@ -660,7 +664,7 @@ function fetch_alerts($memID, $to_fetch = false, $limit = 0, $offset = 0, $with_
  */
 function showAlerts($memID)
 {
-	global $context, $smcFunc, $txt, $sourcedir, $scripturl, $options;
+	global $context, $smcFunc, $txt, $sourcedir, $scripturl, $options, $modSettings;
 
 	require_once($sourcedir . '/Profile-Modify.php');
 
@@ -678,19 +682,19 @@ function showAlerts($memID)
 		 * the value for $alert['target_href'].
 		 */
 
+		// Mark the alert as read while we're at it.
+		alert_mark($memID, $alert_id, 1);
+
 		// In case it failed to determine this alert's link
 		if (empty($alert['target_href']))
 			redirectexit('action=profile;area=showalerts');
-
-		// Mark the alert as read while we're at it.
-		alert_mark($memID, $alert_id, 1);
 
 		// Take the user to the content
 		redirectexit($alert['target_href']);
 	}
 
 	// Prepare the pagination vars.
-	$maxIndex = 10;
+	$maxIndex = !empty($modSettings['alerts_per_page']) && (int) $modSettings['alerts_per_page'] < 1000 ? min((int) $modSettings['alerts_per_page'], 1000) : 25;
 	$context['start'] = (int) isset($_REQUEST['start']) ? $_REQUEST['start'] : 0;
 	$count = alert_count($memID);
 
@@ -827,7 +831,7 @@ function showPosts($memID)
 	$context[$context['profile_menu_name']]['tab_data'] = array(
 		'title' => $txt['showPosts'],
 		'description' => $txt['showPosts_help'],
-		'icon' => 'profile_hd.png',
+		'icon_class' => 'main_icons profile_hd',
 		'tabs' => array(
 			'messages' => array(
 			),
@@ -1087,7 +1091,7 @@ function showPosts($memID)
 			'subject' => $row['subject'],
 			'start' => 'msg' . $row['id_msg'],
 			'time' => timeformat($row['poster_time']),
-			'timestamp' => forum_time(true, $row['poster_time']),
+			'timestamp' => $row['poster_time'],
 			'id' => $row['id_msg'],
 			'can_reply' => false,
 			'can_mark_notify' => !$context['user']['is_guest'],
@@ -1773,7 +1777,7 @@ function statPanel($memID)
 		GROUP BY hour',
 		array(
 			'current_member' => $memID,
-			'time_offset' => (($user_info['time_offset'] + $modSettings['time_offset']) * 3600),
+			'time_offset' => $user_info['time_offset'] * 3600,
 			'max_messages' => 1001,
 		)
 	);
@@ -1880,7 +1884,7 @@ function tracking($memID)
 	$context[$context['profile_menu_name']]['tab_data'] = array(
 		'title' => $txt['tracking'],
 		'description' => $txt['tracking_description'],
-		'icon' => 'profile_hd.png',
+		'icon_class' => 'main_icons profile_hd',
 		'tabs' => array(
 			'activity' => array(),
 			'ip' => array(),
@@ -2197,7 +2201,7 @@ function list_getUserErrors($start, $items_per_page, $sort, $where, $where_vars 
 			'message' => strtr($row['message'], array('&lt;span class=&quot;remove&quot;&gt;' => '', '&lt;/span&gt;' => '')),
 			'url' => $row['url'],
 			'time' => timeformat($row['log_time']),
-			'timestamp' => forum_time(true, $row['log_time']),
+			'timestamp' => $row['log_time'],
 		);
 	$smcFunc['db_free_result']($request);
 
@@ -2270,7 +2274,7 @@ function list_getIPMessages($start, $items_per_page, $sort, $where, $where_vars 
 			'id' => $row['id_msg'],
 			'subject' => $row['subject'],
 			'time' => timeformat($row['poster_time']),
-			'timestamp' => forum_time(true, $row['poster_time'])
+			'timestamp' => $row['poster_time']
 		);
 	$smcFunc['db_free_result']($request);
 
@@ -2321,7 +2325,7 @@ function TrackIP($memID = 0)
 	$ip_var = $context['ip'];
 
 	if ($context['ip']['low'] !== $context['ip']['high'])
-		$context['ip'] = $context['ip']['low'] . ' - ' . $context['ip']['high'];
+		$context['ip'] = $context['ip']['low'] . '-' . $context['ip']['high'];
 	else
 		$context['ip'] = $context['ip']['low'];
 
@@ -2541,11 +2545,11 @@ function TrackIP($memID = 0)
 			),
 			'lacnic' => array(
 				'name' => $txt['whois_lacnic'],
-				'url' => 'https://lacnic.net/cgi-bin/lacnic/whois?query=' . $context['ip'],
+				'url' => 'https://query.milacnic.lacnic.net/search?id=' . $context['ip'],
 			),
 			'ripe' => array(
 				'name' => $txt['whois_ripe'],
-				'url' => 'https://apps.db.ripe.net/search/query.html?searchtext=' . $context['ip'],
+				'url' => 'https://apps.db.ripe.net/db-web-ui/query?searchtext=' . $context['ip'],
 			),
 		);
 	}

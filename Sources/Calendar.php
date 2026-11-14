@@ -8,10 +8,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -113,7 +113,7 @@ function CalendarMain()
 	// Need a start date for all views
 	if (!empty($_REQUEST['start_date']))
 	{
-		$start_parsed = date_parse(convertDateToEnglish($_REQUEST['start_date']));
+		$start_parsed = date_parse(str_replace(',', '', convertDateToEnglish($_REQUEST['start_date'])));
 		if (empty($start_parsed['error_count']) && empty($start_parsed['warning_count']))
 		{
 			$_REQUEST['year'] = $start_parsed['year'];
@@ -125,12 +125,12 @@ function CalendarMain()
 	$month = !empty($_REQUEST['month']) ? (int) $_REQUEST['month'] : $today['month'];
 	$day = !empty($_REQUEST['day']) ? (int) $_REQUEST['day'] : (!empty($_REQUEST['month']) ? 1 : $today['day']);
 
-	$start_object = checkdate($month, $day, $year) === true ? date_create(implode('-', array($year, $month, $day))) : date_create(implode('-', array($today['year'], $today['month'], $today['day'])));
+	$start_object = checkdate($month, $day, $year) === true ? date_create(implode('-', array($year, $month, $day)) . ' ' . getUserTimezone()) : date_create(implode('-', array($today['year'], $today['month'], $today['day'])) . ' ' . getUserTimezone());
 
 	// Need an end date for the list view
 	if (!empty($_REQUEST['end_date']))
 	{
-		$end_parsed = date_parse(convertDateToEnglish($_REQUEST['end_date']));
+		$end_parsed = date_parse(str_replace(',', '', convertDateToEnglish($_REQUEST['end_date'])));
 		if (empty($end_parsed['error_count']) && empty($end_parsed['warning_count']))
 		{
 			$_REQUEST['end_year'] = $end_parsed['year'];
@@ -142,13 +142,18 @@ function CalendarMain()
 	$end_month = !empty($_REQUEST['end_month']) ? (int) $_REQUEST['end_month'] : null;
 	$end_day = !empty($_REQUEST['end_day']) ? (int) $_REQUEST['end_day'] : null;
 
-	$end_object = checkdate($end_month, $end_day, $end_year) === true ? date_create(implode('-', array($end_year, $end_month, $end_day))) : null;
+	$end_object = null;
+
+	if (isset($end_month, $end_day, $end_year) && checkdate($end_month, $end_day, $end_year))
+	{
+		$end_object = date_create(implode('-', array($end_year, $end_month, $end_day)) . ' ' . getUserTimezone());
+	}
 
 	if (empty($end_object) || $start_object >= $end_object)
 	{
 		$num_days_shown = empty($modSettings['cal_days_for_index']) || $modSettings['cal_days_for_index'] < 1 ? 1 : $modSettings['cal_days_for_index'];
 
-		$end_object = date_create(date_format($start_object, 'Y-m-d'));
+		$end_object = date_create(date_format($start_object, 'Y-m-d') . ' ' . getUserTimezone());
 
 		date_add($end_object, date_interval_create_from_date_string($num_days_shown . ' days'));
 	}
@@ -394,7 +399,7 @@ function CalendarPost()
 		$eventDatetimes = getNewEventDatetimes();
 		$context['event'] = array_merge($context['event'], $eventDatetimes);
 
-		$context['event']['last_day'] = (int) strftime('%d', mktime(0, 0, 0, $context['event']['month'] == 12 ? 1 : $context['event']['month'] + 1, 0, $context['event']['month'] == 12 ? $context['event']['year'] + 1 : $context['event']['year']));
+		$context['event']['last_day'] = (int) smf_strftime('%d', mktime(0, 0, 0, $context['event']['month'] == 12 ? 1 : $context['event']['month'] + 1, 0, $context['event']['month'] == 12 ? $context['event']['year'] + 1 : $context['event']['year']));
 	}
 	else
 	{
@@ -495,8 +500,6 @@ function CalendarPost()
 		'name' => $context['page_title'],
 	);
 
-	loadDatePicker('#event_time_input .date_input');
-	loadTimePicker('#event_time_input .time_input', $time_string);
 	loadDatePair('#event_time_input', 'date_input', 'time_input');
 	addInlineJavaScript('
 	$("#allday").click(function(){
@@ -572,7 +575,7 @@ function iCalDownload()
 	$filecontents .= 'VERSION:2.0' . "\n";
 	$filecontents .= 'BEGIN:VEVENT' . "\n";
 	// @TODO - Should be the members email who created the event rather than $webmaster_email.
-	$filecontents .= 'ORGANIZER;CN="' . $event['realname'] . '":MAILTO:' . $webmaster_email . "\n";
+	$filecontents .= 'ORGANIZER;CN="' . strtr($event['realname'], array("\r" => '', "\n" => '')) . '":MAILTO:' . $webmaster_email . "\n";
 	$filecontents .= 'DTSTAMP:' . $datestamp . "\n";
 	$filecontents .= 'DTSTART' . (!empty($event['start_time']) ? ';TZID=' . $event['tz'] : ';VALUE=DATE') . ':' . $datestart . "\n";
 
@@ -585,9 +588,9 @@ function iCalDownload()
 		$filecontents .= 'SEQUENCE:' . $event['sequence'] . "\n";
 
 	if (!empty($event['location']))
-		$filecontents .= 'LOCATION:' . str_replace(',', '\,', $event['location']) . "\n";
+		$filecontents .= 'LOCATION:' . strtr($event['location'], array(',' => '\,', ';' => '\;', '\\\\' => '\\', "\r" => '', "\n" => '')) . "\n";
 
-	$filecontents .= 'SUMMARY:' . implode('', $title);
+	$filecontents .= 'SUMMARY:' . strtr(implode('', $title), array("\r" => '', "\n" => ''));
 	$filecontents .= 'UID:' . $event['eventid'] . '@' . str_replace(' ', '-', $mbname) . "\n";
 	$filecontents .= 'END:VEVENT' . "\n";
 	$filecontents .= 'END:VCALENDAR';

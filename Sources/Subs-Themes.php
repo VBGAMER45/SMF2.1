@@ -7,10 +7,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2025 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.5
  */
 
 if (!defined('SMF'))
@@ -271,6 +271,7 @@ function get_theme_info($path)
 	$install_versions = $theme_info_xml->fetch('theme-info/install/@for');
 
 	// The theme isn't compatible with the current SMF version.
+	require_once($sourcedir . '/Subs-Package.php');
 	if (!$install_versions || !matchPackageVersion($the_version, $install_versions))
 	{
 		remove_dir($path);
@@ -486,12 +487,12 @@ function remove_dir($path)
 					remove_dir($path . '/' . $object);
 
 				else
-					unlink($path . '/' . $object);
+					@unlink($path . '/' . $object);
 			}
 	}
 
 	reset($objects);
-	rmdir($path);
+	@rmdir($path);
 }
 
 /**
@@ -618,7 +619,7 @@ function get_file_listing($path, $relative)
 				'is_writable' => is_writable($path . '/' . $entry),
 				'is_directory' => false,
 				'is_template' => preg_match('~\.template\.php$~', $entry) != 0,
-				'is_image' => preg_match('~\.(jpg|jpeg|gif|bmp|png)$~', $entry) != 0,
+				'is_image' => preg_match('~\.(jpg|jpeg|gif|bmp|png|webp)$~', $entry) != 0,
 				'is_editable' => is_writable($path . '/' . $entry) && preg_match('~\.(php|pl|css|js|vbs|xml|xslt|txt|xsl|html|htm|shtm|shtml|asp|aspx|cgi|py)$~', $entry) != 0,
 				'href' => $scripturl . '?action=admin;area=theme;th=' . $_GET['th'] . ';' . $context['session_var'] . '=' . $context['session_id'] . ';sa=edit;filename=' . $relative . $entry,
 				'size' => $size,

@@ -7,10 +7,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -46,13 +46,17 @@ function writeLog($force = false)
 		logSpider();
 	}
 
+	// Don't log guests anymore - helps during bot attacks.
+	if (!empty($modSettings['no_guest_logging']) && !empty($user_info['is_guest']))
+		return;
+
 	// Don't mark them as online more than every so often.
 	if (!empty($_SESSION['log_time']) && $_SESSION['log_time'] >= (time() - 8) && !$force)
 		return;
 
 	if (!empty($modSettings['who_enabled']))
 	{
-		$encoded_get = truncate_array($_GET) + array('USER_AGENT' => $_SERVER['HTTP_USER_AGENT']);
+		$encoded_get = truncate_array($_GET) + array('USER_AGENT' => mb_substr($_SERVER['HTTP_USER_AGENT'], 0, 128));
 
 		// In the case of a dlattach action, session_var may not be set.
 		if (!isset($context['session_var']))
@@ -60,6 +64,10 @@ function writeLog($force = false)
 
 		unset($encoded_get['sesc'], $encoded_get[$context['session_var']]);
 		$encoded_get = $smcFunc['json_encode']($encoded_get);
+
+		// Sometimes folks mess with USER_AGENT & $_GET data, so one last check to avoid 'data too long' errors
+		if (mb_strlen($encoded_get) > 2048)
+			$encoded_get = '';
 	}
 	else
 		$encoded_get = '';
@@ -349,7 +357,7 @@ function trackStats($stats = array())
 
 	$setStringUpdate = '';
 	$insert_keys = array();
-	$date = strftime('%Y-%m-%d', forum_time(false));
+	$date = smf_strftime('%Y-%m-%d', time());
 	$update_parameters = array(
 		'current_date' => $date,
 	);
@@ -448,7 +456,7 @@ function logActions(array $logs)
 		if (!is_array($log['extra']))
 		{
 			loadLanguage('Errors');
-			trigger_error(sprintf($txt['logActions_not_array'], $log['action']), E_USER_NOTICE);
+			throw new \TypeError(sprintf($txt['logActions_not_array'], $log['action']));
 		}
 
 		// Pull out the parts we want to store separately, but also make sure that the data is proper
@@ -457,7 +465,7 @@ function logActions(array $logs)
 			if (!is_numeric($log['extra']['topic']))
 			{
 				loadLanguage('Errors');
-				trigger_error($txt['logActions_topic_not_numeric'], E_USER_NOTICE);
+				throw new \TypeError($txt['logActions_topic_not_numeric']);
 			}
 			$topic_id = empty($log['extra']['topic']) ? 0 : (int) $log['extra']['topic'];
 			unset($log['extra']['topic']);
@@ -470,7 +478,7 @@ function logActions(array $logs)
 			if (!is_numeric($log['extra']['message']))
 			{
 				loadLanguage('Errors');
-				trigger_error($txt['logActions_message_not_numeric'], E_USER_NOTICE);
+				throw new \TypeError($txt['logActions_message_not_numeric']);
 			}
 			$msg_id = empty($log['extra']['message']) ? 0 : (int) $log['extra']['message'];
 			unset($log['extra']['message']);
@@ -506,7 +514,7 @@ function logActions(array $logs)
 		if (isset($log['extra']['member']) && !is_numeric($log['extra']['member']))
 		{
 			loadLanguage('Errors');
-			trigger_error($txt['logActions_member_not_numeric'], E_USER_NOTICE);
+			throw new \TypeError($txt['logActions_member_not_numeric']);
 		}
 
 		if (isset($log['extra']['board']))
@@ -514,7 +522,7 @@ function logActions(array $logs)
 			if (!is_numeric($log['extra']['board']))
 			{
 				loadLanguage('Errors');
-				trigger_error($txt['logActions_board_not_numeric'], E_USER_NOTICE);
+				throw new \TypeError($txt['logActions_board_not_numeric']);
 			}
 			$board_id = empty($log['extra']['board']) ? 0 : (int) $log['extra']['board'];
 			unset($log['extra']['board']);
@@ -527,7 +535,7 @@ function logActions(array $logs)
 			if (!is_numeric($log['extra']['board_to']))
 			{
 				loadLanguage('Errors');
-				trigger_error($txt['logActions_board_to_not_numeric'], E_USER_NOTICE);
+				throw new \TypeError($txt['logActions_board_to_not_numeric']);
 			}
 			if (empty($board_id))
 			{
@@ -539,7 +547,7 @@ function logActions(array $logs)
 		if (isset($log['extra']['member_affected']))
 			$memID = $log['extra']['member_affected'];
 		else
-			$memID = $user_info['id'];
+			$memID = $user_info['id'] ?? $log['extra']['member'] ?? 0;
 
 		if (isset($user_info['ip']))
 			$memIP = $user_info['ip'];

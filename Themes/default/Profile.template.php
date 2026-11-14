@@ -4,10 +4,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 /**
@@ -158,7 +158,7 @@ function template_summary()
 
 	// Display the basic information about the user
 	echo '
-	<div id="profileview" class="roundframe flow_auto">
+	<div id="profileview" class="roundframe flow_auto noup">
 		<div id="basicinfo">';
 
 	// Are there any custom profile fields for above the name?
@@ -376,7 +376,7 @@ function template_summary()
 		if (!empty($context['activate_message']))
 			echo '
 				<dt class="clear">
-					<span class="alert">', $context['activate_message'], '</span> (<a href="', $context['activate_link'], '"', ($context['activate_type'] == 4 ? ' class="you_sure" data-confirm="' . $txt['profileConfirm'] . '"' : ''), '>', $context['activate_link_text'], '</a>)
+					<span class="alert">', $context['activate_message'], '</span> (<a href="', $context['activate_link'], '">', $context['activate_link_text'], '</a>)
 				</dt>';
 
 		// If the current member is banned, show a message and possibly a link to the ban.
@@ -489,9 +489,9 @@ function template_showPosts()
 	global $context, $scripturl, $txt;
 
 	echo '
-		<div class="cat_bar">
+		<div class="cat_bar', !isset($context['attachments']) ? ' cat_bar_round' : '', '">
 			<h3 class="catbg">
-				', (!isset($context['attachments']) && empty($context['is_topics']) ? $txt['showMessages'] : (!empty($context['is_topics']) ? $txt['showTopics'] : $txt['showAttachments'])), ' - ', $context['member']['name'], '
+				', (!isset($context['attachments']) && empty($context['is_topics']) ? $txt['showMessages'] : (!empty($context['is_topics']) ? $txt['showTopics'] : $txt['showAttachments'])), !$context['user']['is_owner'] ? ' - ' . $context['member']['name'] : '', '
 			</h3>
 		</div>', !empty($context['page_index']) ? '
 		<div class="pagesection">
@@ -506,7 +506,7 @@ function template_showPosts()
 		{
 			echo '
 		<div class="', $post['css_class'], '">
-			<div class="counter">', $post['counter'], '</div>
+			<div class="page_number floatright"> #', $post['counter'], '</div>
 			<div class="topic_details">
 				<h5>
 					<strong><a href="', $scripturl, '?board=', $post['board']['id'], '.0">', $post['board']['name'], '</a> / <a href="', $scripturl, '?topic=', $post['topic'], '.', $post['start'], '#msg', $post['id'], '">', $post['subject'], '</a></strong>
@@ -569,7 +569,7 @@ function template_showAlerts()
 	echo '
 		<div class="cat_bar">
 			<h3 class="catbg">
-			', $txt['alerts'], ' - ', $context['member']['name'], '
+			', $txt['alerts'], !$context['user']['is_owner'] ? ' - ' . $context['member']['name'] : '', '
 			</h3>
 		</div>';
 
@@ -619,9 +619,7 @@ function template_showAlerts()
 		echo '
 			</table>
 			<div class="pagesection">
-				<div class="floatleft">
-					', $context['pagination'], '
-				</div>
+				<div class="pagelinks">', $context['pagination'], '</div>
 				<div class="floatright">';
 
 		if ($context['showCheckboxes'])
@@ -655,9 +653,9 @@ function template_showDrafts()
 	global $context, $scripturl, $txt;
 
 	echo '
-		<div class="cat_bar">
+		<div class="cat_bar cat_bar_round">
 			<h3 class="catbg">
-				', $txt['drafts'], ' - ', $context['member']['name'], '
+				', $txt['drafts'], !$context['user']['is_owner'] ? ' - ' . $context['member']['name'] : '', '
 			</h3>
 		</div>', !empty($context['page_index']) ? '
 		<div class="pagesection">
@@ -677,7 +675,7 @@ function template_showDrafts()
 		{
 			echo '
 		<div class="windowbg">
-			<div class="counter">', $draft['counter'], '</div>
+			<div class="page_number floatright"> #', $draft['counter'], '</div>
 			<div class="topic_details">
 				<h5>
 					<strong><a href="', $scripturl, '?board=', $draft['board']['id'], '.0">', $draft['board']['name'], '</a> / ', $draft['topic']['link'], '</strong> &nbsp; &nbsp;';
@@ -692,7 +690,7 @@ function template_showDrafts()
 
 			echo '
 				</h5>
-				<span class="smalltext">&#171;&nbsp;<strong>', $txt['on'], ':</strong> ', $draft['time'], '&nbsp;&#187;</span>
+				<span class="smalltext"><strong>', $txt['draft_saved_on'], ':</strong> ', $draft['time'], '</span>
 			</div><!-- .topic_details -->
 			<div class="list_posts">
 				', $draft['body'], '
@@ -789,7 +787,7 @@ function template_editBuddies()
 			if (!empty($context['custom_pf']))
 				foreach ($context['custom_pf'] as $key => $column)
 					echo '
-					<td class="lefttext buddy_custom_fields">', $buddy['options'][$key], '</td>';
+					<td class="centertext buddy_custom_fields">', $buddy['options'][$key], '</td>';
 
 			echo '
 					<td class="centertext buddy_remove">
@@ -1865,7 +1863,7 @@ function template_alert_configuration()
 		<p class="information">
 			', (empty($context['description']) ? $txt['alert_prefs_desc'] : $context['description']), '
 		</p>
-		<form action="', $scripturl, '?', $context['action'], '" method="post" accept-charset="', $context['character_set'], '" id="notify_options" class="flow_hidden">
+		<form action="', $scripturl, '?', $context['action'], '" method="post" accept-charset="', $context['character_set'], '" id="notify_options" class="flow_auto">
 			<div class="cat_bar">
 				<h3 class="catbg">
 					', $txt['notification_general'], '
@@ -1889,7 +1887,7 @@ function template_alert_configuration()
 						<label for="notify_send_body">', $txt['notify_alert_timeout'], '</label>
 					</dt>
 					<dd>
-						<input type="number" size="4" id="notify_alert_timeout" name="opt_alert_timeout" min="0" value="', $context['member']['alert_timeout'], '">
+						<input type="number" size="4" id="notify_alert_timeout" name="opt_alert_timeout" min="0" max="127" value="', $context['member']['alert_timeout'], '">
 					</dd>';
 
 	echo '
@@ -2071,7 +2069,7 @@ function template_groupMembership()
 	if (!empty($context['update_message']))
 		echo '
 			<div class="infobox">
-				', $context['update_message'], '.
+				', $context['update_message'], '
 			</div>';
 
 	echo '
@@ -2224,12 +2222,39 @@ function template_ignoreboards()
 						<a href="javascript:void(0);" onclick="selectBoards([', implode(', ', $category['child_ids']), '], \'creator\'); return false;">', $category['name'], '</a>
 						<ul>';
 
-		foreach ($category['boards'] as $board)
+		$cat_boards = array_values($category['boards']);
+		foreach ($cat_boards as $key => $board)
 		{
 			echo '
-							<li style="margin-', $context['right_to_left'] ? 'right' : 'left', ': ', $board['child_level'], 'em;">
-								<label for="ignore_brd', $board['id'], '"><input type="checkbox" id="brd', $board['id'], '" name="ignore_brd[', $board['id'], ']" value="', $board['id'], '"', $board['selected'] ? ' checked' : '', '> ', $board['name'], '</label>
+							<li>
+								<label for="brd', $board['id'], '">
+									<input type="checkbox" id="brd', $board['id'], '" name="brd[', $board['id'], ']" value="', $board['id'], '"', $board['selected'] ? ' checked' : '', '>
+									', $board['name'], '
+								</label>';
+
+			// Nest child boards inside another list.
+			$curr_child_level = $board['child_level'];
+			$next_child_level = $cat_boards[$key + 1]['child_level'] ?? 0;
+
+			if ($next_child_level > $curr_child_level)
+			{
+				echo '
+								<ul style="margin-', $context['right_to_left'] ? 'right' : 'left', ': 2.5ch;">';
+			}
+			else
+			{
+				// Close child board lists until we reach a common level
+				// with the next board.
+				while ($next_child_level < $curr_child_level--)
+				{
+					echo '
+									</li>
+								</ul>';
+				}
+
+				echo '
 							</li>';
+			}
 		}
 
 		echo '
@@ -2357,7 +2382,7 @@ function template_issueWarning()
 	foreach ($context['notification_templates'] as $k => $type)
 		echo '
 			if (index == ', $k, ')
-				document.getElementById(\'warn_body\').value = "', strtr($type['body'], array('"' => "'", "\n" => '\\n', "\r" => '')), '";';
+				document.getElementById(\'warn_body\').value = ', JavaScriptEscape($type['body']), ';';
 
 	echo '
 		}
@@ -2511,6 +2536,12 @@ function template_issueWarning()
 		{
 			$.ajax({
 				type: "POST",
+				headers: {
+					"X-SMF-AJAX": 1
+				},
+				xhrFields: {
+					withCredentials: typeof allow_xhjr_credentials !== "undefined" ? allow_xhjr_credentials : false
+				},
 				url: "' . $scripturl . '?action=xmlhttp;sa=previews;xml",
 				data: {item: "warning_preview", title: $("#warn_sub").val(), body: $("#warn_body").val(), issuing: true},
 				context: document.body,
@@ -2937,7 +2968,7 @@ function template_profile_avatar_select()
 										var size = avatar.alt.substr(3, 2) + " " + avatar.alt.substr(0, 2) + String.fromCharCode(117, 98, 116);
 										var file = document.getElementById("file");
 
-										if (avatar.src.indexOf("blank.png") > -1)
+										if (avatar.src.indexOf("blank.png") > -1 || selavatar.indexOf("blank.png") == -1)
 											changeSel(selavatar);
 										else
 											previewExternalAvatar(avatar.src)
@@ -2960,7 +2991,7 @@ function template_profile_avatar_select()
 		echo '
 								<div id="avatar_upload">
 									', $context['member']['avatar']['choice'] == 'upload' ? '<div class="edit_avatar_img"><img src="' . $context['member']['avatar']['href'] . '" alt=""></div>' : '', '
-									<input type="file" size="44" name="attachment" id="avatar_upload_box" value="" onchange="readfromUpload(this)"  onfocus="selectRadioByName(document.forms.creator.avatar_choice, \'upload\');" accept="image/gif, image/jpeg, image/jpg, image/png">', template_max_size('upload'), '
+									<input type="file" size="44" name="attachment" id="avatar_upload_box" value="" onchange="readfromUpload(this)"  onfocus="selectRadioByName(document.forms.creator.avatar_choice, \'upload\');" accept="image/gif, image/jpeg, image/jpg, image/png, image/webp, image/svg+xml">', template_max_size('upload'), '
 									', (!empty($context['member']['avatar']['id_attach']) ? '<br><img src="' . $context['member']['avatar']['href'] . (strpos($context['member']['avatar']['href'], '?') === false ? '?' : '&amp;') . 'time=' . time() . '" alt="" id="attached_image"><input type="hidden" name="id_attach" value="' . $context['member']['avatar']['id_attach'] . '">' : ''), '
 								</div>';
 

@@ -7,10 +7,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -36,12 +36,10 @@ function getBirthdayRange($low_date, $high_date)
 	if ($smcFunc['db_title'] !== POSTGRE_TITLE)
 	{
 		// Collect all of the birthdays for this month.  I know, it's a painful query.
-		$result = $smcFunc['db_query']('birthday_array', '
+		$result = $smcFunc['db_query']('', '
 			SELECT id_member, real_name, YEAR(birthdate) AS birth_year, birthdate
 			FROM {db_prefix}members
-			WHERE MONTH(birthdate) != {int:no_month}
-				AND DAYOFMONTH(birthdate) != {int:no_day}
-				AND YEAR(birthdate) <= {int:max_year}
+			WHERE birthdate != {date:no_birthdate}
 				AND (
 					DATE_FORMAT(birthdate, {string:year_low}) BETWEEN {date:low_date} AND {date:high_date}' . ($year_low == $year_high ? '' : '
 					OR DATE_FORMAT(birthdate, {string:year_high}) BETWEEN {date:low_date} AND {date:high_date}') . '
@@ -49,39 +47,31 @@ function getBirthdayRange($low_date, $high_date)
 				AND is_activated = {int:is_activated}',
 			array(
 				'is_activated' => 1,
-				'no_month' => 0,
-				'no_day' => 0,
+				'no_birthdate' => '1004-01-01',
 				'year_low' => $year_low . '-%m-%d',
 				'year_high' => $year_high . '-%m-%d',
 				'low_date' => $low_date,
 				'high_date' => $high_date,
-				'max_year' => $year_high,
 			)
 		);
 	}
 	else
 	{
-		$result = $smcFunc['db_query']('birthday_array', '
+		$result = $smcFunc['db_query']('', '
 			SELECT id_member, real_name, YEAR(birthdate) AS birth_year, birthdate
 			FROM {db_prefix}members
-			WHERE YEAR(birthdate) != {string:year_one}
-				AND MONTH(birthdate) != {int:no_month}
-				AND DAYOFMONTH(birthdate) != {int:no_day}
+			WHERE birthdate != {date:no_birthdate}
 				AND (
 					indexable_month_day(birthdate) BETWEEN indexable_month_day({date:year_low_low_date}) AND indexable_month_day({date:year_low_high_date})' . ($year_low == $year_high ? '' : '
-					OR  indexable_month_day(birthdate) BETWEEN indexable_month_day({date:year_high_low_date}) AND indexable_month_day({date:year_high_high_date})') . '
+					OR indexable_month_day(birthdate) BETWEEN indexable_month_day({date:year_high_low_date}) AND indexable_month_day({date:year_high_high_date})') . '
 				)
 				AND is_activated = {int:is_activated}',
 			array(
 				'is_activated' => 1,
-				'no_month' => 0,
-				'no_day' => 0,
-				'year_one' => '1004',
-				'year_low' => $year_low . '-%m-%d',
-				'year_high' => $year_high . '-%m-%d',
+				'no_birthdate' => '1004-01-01',
 				'year_low_low_date' => $low_date,
-				'year_low_high_date' => ($year_low == $year_high ? $high_date : $year_low . '-12-31'),
-				'year_high_low_date' => ($year_low == $year_high ? $low_date : $year_high . '-01-01'),
+				'year_low_high_date' => $year_low == $year_high ? $high_date : $year_low . '-12-31',
+				'year_high_low_date' => $year_low == $year_high ? $low_date : $year_high . '-01-01',
 				'year_high_high_date' => $high_date,
 			)
 		);
@@ -90,7 +80,7 @@ function getBirthdayRange($low_date, $high_date)
 	while ($row = $smcFunc['db_fetch_assoc']($result))
 	{
 		if ($year_low != $year_high)
-			$age_year = substr($row['birthdate'], 5) < substr($high_date, 5) ? $year_high : $year_low;
+			$age_year = substr($row['birthdate'], 5) <= substr($high_date, 5) ? $year_high : $year_low;
 		else
 			$age_year = $year_low;
 
@@ -132,10 +122,10 @@ function getEventRange($low_date, $high_date, $use_permissions = true)
 	require_once($sourcedir . '/Subs.php');
 
 	if (empty($timezone_array['default']))
-		$timezone_array['default'] = timezone_open(date_default_timezone_get());
+		$timezone_array['default'] = timezone_open(getUserTimezone());
 
-	$low_object = date_create($low_date);
-	$high_object = date_create($high_date);
+	$low_object = date_create($low_date, $timezone_array['default']);
+	$high_object = date_create($high_date, $timezone_array['default']);
 
 	// Find all the calendar info...
 	$result = $smcFunc['db_query']('calendar_get_events', '
@@ -185,7 +175,7 @@ function getEventRange($low_date, $high_date, $use_permissions = true)
 		$start_date_string = date_format($start_object, 'Y-m-d');
 		$end_date_string = date_format($end_object, 'Y-m-d');
 
-		$cal_date = ($start_object >= $low_object) ? $start_object : $low_object;
+		$cal_date = ($start_object >= $low_object) ? (clone $start_object) : (clone $low_object);
 		while ($cal_date <= $end_object && $cal_date <= $high_object)
 		{
 			$starts_today = (date_format($cal_date, 'Y-m-d') == $start_date_string);
@@ -256,7 +246,7 @@ function getEventRange($low_date, $high_date, $use_permissions = true)
 					'topic' => $row['id_topic'],
 					'msg' => $row['id_first_msg'],
 					'poster' => $row['id_member'],
-					'allowed_groups' => explode(',', $row['member_groups']),
+					'allowed_groups' => isset($row['member_groups']) ? explode(',', $row['member_groups']) : array(),
 				));
 
 			date_add($cal_date, date_interval_create_from_date_string('1 day'));
@@ -382,10 +372,10 @@ function canLinkEvent()
 function getTodayInfo()
 {
 	return array(
-		'day' => (int) strftime('%d', forum_time()),
-		'month' => (int) strftime('%m', forum_time()),
-		'year' => (int) strftime('%Y', forum_time()),
-		'date' => strftime('%Y-%m-%d', forum_time()),
+		'day' => (int) smf_strftime('%d', time(), getUserTimezone()),
+		'month' => (int) smf_strftime('%m', time(), getUserTimezone()),
+		'year' => (int) smf_strftime('%Y', time(), getUserTimezone()),
+		'date' => smf_strftime('%Y-%m-%d', time(), getUserTimezone()),
 	);
 }
 
@@ -402,12 +392,12 @@ function getCalendarGrid($selected_date, $calendarOptions, $is_previous = false,
 {
 	global $scripturl, $modSettings;
 
-	$selected_object = date_create($selected_date);
+	$selected_object = date_create($selected_date . ' ' . getUserTimezone());
 
-	$next_object = date_create($selected_date);
+	$next_object = date_create($selected_date . ' ' . getUserTimezone());
 	$next_object->modify('first day of next month');
 
-	$prev_object = date_create($selected_date);
+	$prev_object = date_create($selected_date . ' ' . getUserTimezone());
 	$prev_object->modify('first day of previous month');
 
 	// Eventually this is what we'll be returning.
@@ -436,13 +426,16 @@ function getCalendarGrid($selected_date, $calendarOptions, $is_previous = false,
 			'disabled' => $modSettings['cal_maxyear'] < date_format($next_object, 'Y'),
 		),
 		'start_date' => timeformat(date_format($selected_object, 'U'), get_date_or_time_format('date')),
+		'start_year' => date_format($selected_object, 'Y'),
+		'start_month' => date_format($selected_object, 'm'),
+		'start_day' => date_format($selected_object, 'd'),
 	);
 
 	// Get today's date.
 	$today = getTodayInfo();
 
-	$first_day_object = date_create(date_format($selected_object, 'Y-m-01'));
-	$last_day_object = date_create(date_format($selected_object, 'Y-m-t'));
+	$first_day_object = date_create(date_format($selected_object, 'Y-m-01') . ' ' . getUserTimezone());
+	$last_day_object = date_create(date_format($selected_object, 'Y-m-t') . ' ' . getUserTimezone());
 
 	// Get information about this month.
 	$month_info = array(
@@ -455,8 +448,8 @@ function getCalendarGrid($selected_date, $calendarOptions, $is_previous = false,
 			'day_of_month' => date_format($last_day_object, 't'),
 			'date' => date_format($last_day_object, 'Y-m-d'),
 		),
-		'first_day_of_year' => date_format(date_create(date_format($selected_object, 'Y-01-01')), 'w'),
-		'first_day_of_next_year' => date_format(date_create((date_format($selected_object, 'Y') + 1) . '-01-01'), 'w'),
+		'first_day_of_year' => date_format(date_create(date_format($selected_object, 'Y-01-01') . ' ' . getUserTimezone()), 'w'),
+		'first_day_of_next_year' => date_format(date_create((date_format($selected_object, 'Y') + 1) . '-01-01' . ' ' . getUserTimezone()), 'w'),
 	);
 
 	// The number of days the first row is shifted to the right for the starting day.
@@ -537,7 +530,6 @@ function getCalendarGrid($selected_date, $calendarOptions, $is_previous = false,
 
 	if ($has_picker)
 	{
-		loadDatePicker('#calendar_navigation .date_input');
 		loadDatePair('#calendar_navigation', 'date_input');
 	}
 
@@ -555,7 +547,7 @@ function getCalendarWeek($selected_date, $calendarOptions)
 {
 	global $scripturl, $modSettings, $txt;
 
-	$selected_object = date_create($selected_date);
+	$selected_object = date_create($selected_date . ' ' . getUserTimezone());
 
 	// Get today's date.
 	$today = getTodayInfo();
@@ -563,7 +555,7 @@ function getCalendarWeek($selected_date, $calendarOptions)
 	// What is the actual "start date" for the passed day.
 	$calendarOptions['start_day'] = empty($calendarOptions['start_day']) ? 0 : (int) $calendarOptions['start_day'];
 	$day_of_week = date_format($selected_object, 'w');
-	$first_day_object = date_create($selected_date);
+	$first_day_object = date_create($selected_date . ' ' . getUserTimezone());
 	if ($day_of_week != $calendarOptions['start_day'])
 	{
 		// Here we offset accordingly to get things to the real start of a week.
@@ -574,17 +566,17 @@ function getCalendarWeek($selected_date, $calendarOptions)
 		date_sub($first_day_object, date_interval_create_from_date_string($date_diff . ' days'));
 	}
 
-	$last_day_object = date_create(date_format($first_day_object, 'Y-m-d'));
+	$last_day_object = date_create(date_format($first_day_object, 'Y-m-d') . ' ' . getUserTimezone());
 	date_add($last_day_object, date_interval_create_from_date_string('1 week'));
 
 	$month = date_format($first_day_object, 'n');
 	$year = date_format($first_day_object, 'Y');
 	$day = date_format($first_day_object, 'd');
 
-	$next_object = date_create($selected_date);
+	$next_object = date_create($selected_date . ' ' . getUserTimezone());
 	date_add($next_object, date_interval_create_from_date_string('1 week'));
 
-	$prev_object = date_create($selected_date);
+	$prev_object = date_create($selected_date . ' ' . getUserTimezone());
 	date_sub($prev_object, date_interval_create_from_date_string('1 week'));
 
 	// Now start filling in the calendar grid.
@@ -605,6 +597,12 @@ function getCalendarWeek($selected_date, $calendarOptions)
 			'disabled' => $modSettings['cal_maxyear'] < date_format($next_object, 'Y'),
 		),
 		'start_date' => timeformat(date_format($selected_object, 'U'), get_date_or_time_format('date')),
+		'start_year' => date_format($selected_object, 'Y'),
+		'start_month' => date_format($selected_object, 'm'),
+		'start_day' => date_format($selected_object, 'd'),
+		'show_events' => $calendarOptions['show_events'],
+		'show_holidays' => $calendarOptions['show_holidays'],
+		'show_birthdays' => $calendarOptions['show_birthdays'],
 	);
 
 	// Fetch the arrays for birthdays, posted events, and holidays.
@@ -616,7 +614,7 @@ function getCalendarWeek($selected_date, $calendarOptions)
 
 	// This holds all the main data - there is at least one month!
 	$calendarGrid['months'] = array();
-	$current_day_object = date_create(date_format($first_day_object, 'Y-m-d'));
+	$current_day_object = date_create(date_format($first_day_object, 'Y-m-d') . ' ' . getUserTimezone());
 	for ($i = 0; $i < 7; $i++)
 	{
 		$current_month = date_format($current_day_object, 'n');
@@ -647,7 +645,6 @@ function getCalendarWeek($selected_date, $calendarOptions)
 	$calendarGrid['previous_week']['href'] = $scripturl . '?action=calendar;viewweek;year=' . $calendarGrid['previous_week']['year'] . ';month=' . $calendarGrid['previous_week']['month'] . ';day=' . $calendarGrid['previous_week']['day'];
 	$calendarGrid['next_week']['href'] = $scripturl . '?action=calendar;viewweek;year=' . $calendarGrid['next_week']['year'] . ';month=' . $calendarGrid['next_week']['month'] . ';day=' . $calendarGrid['next_week']['day'];
 
-	loadDatePicker('#calendar_navigation .date_input');
 	loadDatePair('#calendar_navigation', 'date_input', '');
 
 	return $calendarGrid;
@@ -667,8 +664,8 @@ function getCalendarList($start_date, $end_date, $calendarOptions)
 	require_once($sourcedir . '/Subs.php');
 
 	// DateTime objects make life easier
-	$start_object = date_create($start_date);
-	$end_object = date_create($end_date);
+	$start_object = date_create($start_date . ' ' . getUserTimezone());
+	$end_object = date_create($end_date . ' ' . getUserTimezone());
 
 	$calendarGrid = array(
 		'start_date' => timeformat(date_format($start_object, 'U'), get_date_or_time_format('date')),
@@ -712,113 +709,9 @@ function getCalendarList($start_date, $end_date, $calendarOptions)
 		}
 	}
 
-	loadDatePicker('#calendar_range .date_input');
 	loadDatePair('#calendar_range', 'date_input', '');
 
 	return $calendarGrid;
-}
-
-/**
- * Loads the necessary JavaScript and CSS to create a datepicker.
- *
- * @param string $selector A CSS selector for the input field(s) that the datepicker should be attached to.
- * @param string $date_format The date format to use, in strftime() format.
- */
-function loadDatePicker($selector = 'input.date_input', $date_format = '')
-{
-	global $modSettings, $txt, $context, $user_info, $options;
-
-	if (empty($date_format))
-		$date_format = get_date_or_time_format('date');
-
-	// Convert to format used by datepicker
-	$date_format = strtr($date_format, array(
-		// Day
-		'%a' => 'D', '%A' => 'DD', '%e' => 'd', '%d' => 'dd', '%j' => 'oo', '%u' => '', '%w' => '',
-		// Week
-		'%U' => '', '%V' => '', '%W' => '',
-		// Month
-		'%b' => 'M', '%B' => 'MM', '%h' => 'M', '%m' => 'mm',
-		// Year
-		'%C' => '', '%g' => 'y', '%G' => 'yy', '%y' => 'y', '%Y' => 'yy',
-		// Time (we remove all of these)
-		'%H' => '', '%k' => '', '%I' => '', '%l' => '', '%M' => '', '%p' => '', '%P' => '',
-		'%r' => '', '%R' => '', '%S' => '', '%T' => '', '%X' => '', '%z' => '', '%Z' => '',
-		// Time and Date Stamps
-		'%c' => 'D, d M yy', '%D' => 'mm/dd/y', '%F' => 'yy-mm-dd', '%s' => '@', '%x' => 'D, d M yy',
-		// Miscellaneous
-		'%n' => ' ', '%t' => ' ', '%%' => '%',
-	));
-
-	loadCSSFile('jquery-ui.datepicker.css', array(), 'smf_datepicker');
-	loadJavaScriptFile('jquery-ui.datepicker.min.js', array('defer' => true), 'smf_datepicker');
-	addInlineJavaScript('
-	$("' . $selector . '").datepicker({
-		dateFormat: "' . $date_format . '",
-		autoSize: true,
-		isRTL: ' . ($context['right_to_left'] ? 'true' : 'false') . ',
-		constrainInput: true,
-		showAnim: "",
-		showButtonPanel: false,
-		yearRange: "' . $modSettings['cal_minyear'] . ':' . $modSettings['cal_maxyear'] . '",
-		hideIfNoPrevNext: true,
-		monthNames: ["' . implode('", "', $txt['months_titles']) . '"],
-		monthNamesShort: ["' . implode('", "', $txt['months_short']) . '"],
-		dayNames: ["' . implode('", "', $txt['days']) . '"],
-		dayNamesShort: ["' . implode('", "', $txt['days_short']) . '"],
-		dayNamesMin: ["' . implode('", "', $txt['days_short']) . '"],
-		prevText: "' . $txt['prev_month'] . '",
-		nextText: "' . $txt['next_month'] . '",
-		firstDay: ' . (!empty($options['calendar_start_day']) ? $options['calendar_start_day'] : 0) . ',
-	});', true);
-}
-
-/**
- * Loads the necessary JavaScript and CSS to create a timepicker.
- *
- * @param string $selector A CSS selector for the input field(s) that the timepicker should be attached to.
- * @param string $time_format A time format in strftime format
- */
-function loadTimePicker($selector = 'input.time_input', $time_format = '')
-{
-	global $modSettings, $txt, $context;
-
-	if (empty($time_format))
-		$time_format = get_date_or_time_format('time');
-
-	// Format used for timepicker
-	$time_format = strtr($time_format, array(
-		'%H' => 'H',
-		'%k' => 'G',
-		'%I' => 'h',
-		'%l' => 'g',
-		'%M' => 'i',
-		'%p' => 'A',
-		'%P' => 'a',
-		'%r' => 'h:i:s A',
-		'%R' => 'H:i',
-		'%S' => 's',
-		'%T' => 'H:i:s',
-		'%X' => 'H:i:s',
-	));
-
-	loadCSSFile('jquery.timepicker.css', array(), 'smf_timepicker');
-	loadJavaScriptFile('jquery.timepicker.min.js', array('defer' => true), 'smf_timepicker');
-	addInlineJavaScript('
-	$("' . $selector . '").timepicker({
-		timeFormat: "' . $time_format . '",
-		showDuration: true,
-		maxTime: "23:59:59",
-		lang: {
-			am: "' . strtolower($txt['time_am']) . '",
-			pm: "' . strtolower($txt['time_pm']) . '",
-			AM: "' . strtoupper($txt['time_am']) . '",
-			PM: "' . strtoupper($txt['time_pm']) . '",
-			decimal: "' . $txt['decimal_sign'] . '",
-			mins: "' . $txt['minutes_short'] . '",
-			hr: "' . $txt['hour_short'] . '",
-		}
-	});', true);
 }
 
 /**
@@ -860,7 +753,7 @@ function loadDatePair($container, $date_class = '', $time_class = '')
 		// Customize Datepair to work with jQuery UI's datepicker.
 		$datepair_options .= '
 		parseDate: function (el) {
-			var val = $(el).datepicker("getDate");
+			var val = el.value;
 			if (!val) {
 				return null;
 			}
@@ -868,7 +761,7 @@ function loadDatePair($container, $date_class = '', $time_class = '')
 			return utc && new Date(utc.getTime() + (utc.getTimezoneOffset() * 60000));
 		},
 		updateDate: function (el, v) {
-			$(el).datepicker("setDate", new Date(v.getTime() - (v.getTimezoneOffset() * 60000)));
+			el.value = new Date(v.getTime() - (v.getTimezoneOffset() * 60000)).toISOString().substring(0, 10);
 		},';
 	}
 
@@ -883,7 +776,22 @@ function loadDatePair($container, $date_class = '', $time_class = '')
 	else
 	{
 		$datepair_options .= '
-		timeClass: "' . $time_class . '",';
+		timeClass: "' . $time_class . '",
+		parseTime: function(input){
+			let dateObj = new Date();
+			dateObj.setHours(Number(input.value.substring(0, 2)), Number(input.value.substring(3, 5)), 0);
+			return dateObj;
+		},
+		updateTime: function(input, dateObj){
+			input.value = dateObj.toTimeString().substring(0, 5);
+		},
+		setMinTime: function(input, dateObj){
+			if (dateObj !== null) {
+				input.min = dateObj.toTimeString().substring(0, 5);
+			} else {
+				input.min = "00:00";
+			}
+		},';
 	}
 
 	addInlineJavaScript('
@@ -904,8 +812,8 @@ function cache_getOffsetIndependentEvents($eventOptions)
 {
 	$days_to_index = $eventOptions['num_days_shown'];
 
-	$low_date = strftime('%Y-%m-%d', forum_time(false) - 24 * 3600);
-	$high_date = strftime('%Y-%m-%d', forum_time(false) + $days_to_index * 24 * 3600);
+	$low_date = smf_strftime('%Y-%m-%d', time() - 24 * 3600);
+	$high_date = smf_strftime('%Y-%m-%d', time() + $days_to_index * 24 * 3600);
 
 	return array(
 		'data' => array(
@@ -913,7 +821,7 @@ function cache_getOffsetIndependentEvents($eventOptions)
 			'birthdays' => (!empty($eventOptions['include_birthdays']) ? getBirthdayRange($low_date, $high_date) : array()),
 			'events' => (!empty($eventOptions['include_events']) ? getEventRange($low_date, $high_date, false) : array()),
 		),
-		'refresh_eval' => 'return \'' . strftime('%Y%m%d', forum_time(false)) . '\' != strftime(\'%Y%m%d\', forum_time(false)) || (!empty($modSettings[\'calendar_updated\']) && ' . time() . ' < $modSettings[\'calendar_updated\']);',
+		'refresh_eval' => 'return \'' . smf_strftime('%Y%m%d', time()) . '\' != smf_strftime(\'%Y%m%d\', time()) || (!empty($modSettings[\'calendar_updated\']) && ' . time() . ' < $modSettings[\'calendar_updated\']);',
 		'expires' => time() + 3600,
 	);
 }
@@ -944,15 +852,15 @@ function cache_getRecentEvents($eventOptions)
 	$days_for_index = $eventOptions['num_days_shown'] * 86400;
 
 	// Get the current member time/date.
-	$now = forum_time();
+	$now = time();
 
 	if (!empty($eventOptions['include_holidays']))
 	{
 		// Holidays between now and now + days.
 		for ($i = $now; $i < $now + $days_for_index; $i += 86400)
 		{
-			if (isset($cached_data['holidays'][strftime('%Y-%m-%d', $i)]))
-				$return_data['calendar_holidays'] = array_merge($return_data['calendar_holidays'], $cached_data['holidays'][strftime('%Y-%m-%d', $i)]);
+			if (isset($cached_data['holidays'][smf_strftime('%Y-%m-%d', $i)]))
+				$return_data['calendar_holidays'] = array_merge($return_data['calendar_holidays'], $cached_data['holidays'][smf_strftime('%Y-%m-%d', $i)]);
 		}
 	}
 
@@ -961,11 +869,11 @@ function cache_getRecentEvents($eventOptions)
 		// Happy Birthday, guys and gals!
 		for ($i = $now; $i < $now + $days_for_index; $i += 86400)
 		{
-			$loop_date = strftime('%Y-%m-%d', $i);
+			$loop_date = smf_strftime('%Y-%m-%d', $i);
 			if (isset($cached_data['birthdays'][$loop_date]))
 			{
 				foreach ($cached_data['birthdays'][$loop_date] as $index => $dummy)
-					$cached_data['birthdays'][strftime('%Y-%m-%d', $i)][$index]['is_today'] = $loop_date === $today['date'];
+					$cached_data['birthdays'][smf_strftime('%Y-%m-%d', $i)][$index]['is_today'] = $loop_date === $today['date'];
 				$return_data['calendar_birthdays'] = array_merge($return_data['calendar_birthdays'], $cached_data['birthdays'][$loop_date]);
 			}
 		}
@@ -977,7 +885,7 @@ function cache_getRecentEvents($eventOptions)
 		for ($i = $now; $i < $now + $days_for_index; $i += 86400)
 		{
 			// Determine the date of the current loop step.
-			$loop_date = strftime('%Y-%m-%d', $i);
+			$loop_date = smf_strftime('%Y-%m-%d', $i);
 
 			// No events today? Check the next day.
 			if (empty($cached_data['events'][$loop_date]))
@@ -1018,7 +926,7 @@ function cache_getRecentEvents($eventOptions)
 	return array(
 		'data' => $return_data,
 		'expires' => time() + 3600,
-		'refresh_eval' => 'return \'' . strftime('%Y%m%d', forum_time(false)) . '\' != strftime(\'%Y%m%d\', forum_time(false)) || (!empty($modSettings[\'calendar_updated\']) && ' . time() . ' < $modSettings[\'calendar_updated\']);',
+		'refresh_eval' => 'return \'' . smf_strftime('%Y%m%d', time()) . '\' != smf_strftime(\'%Y%m%d\', time()) || (!empty($modSettings[\'calendar_updated\']) && ' . time() . ' < $modSettings[\'calendar_updated\']);',
 		'post_retri_eval' => '
 			global $context, $scripturl, $user_info;
 
@@ -1060,7 +968,7 @@ function validateEventPost()
 		// The 2.1 way
 		if (isset($_POST['start_date']))
 		{
-			$d = date_parse(convertDateToEnglish($_POST['start_date']));
+			$d = date_parse(str_replace(',', '', convertDateToEnglish($_POST['start_date'])));
 			if (!empty($d['error_count']) || !empty($d['warning_count']))
 				fatal_lang_error('invalid_date', false);
 			if (empty($d['year']))
@@ -1070,7 +978,7 @@ function validateEventPost()
 		}
 		elseif (isset($_POST['start_datetime']))
 		{
-			$d = date_parse(convertDateToEnglish($_POST['start_datetime']));
+			$d = date_parse(str_replace(',', '', convertDateToEnglish($_POST['start_datetime'])));
 			if (!empty($d['error_count']) || !empty($d['warning_count']))
 				fatal_lang_error('invalid_date', false);
 			if (empty($d['year']))
@@ -1440,7 +1348,7 @@ function getEventProperties($event_id)
 		),
 	);
 
-	$return_value['last_day'] = (int) strftime('%d', mktime(0, 0, 0, $return_value['month'] == 12 ? 1 : $return_value['month'] + 1, 0, $return_value['month'] == 12 ? $return_value['year'] + 1 : $return_value['year']));
+	$return_value['last_day'] = (int) smf_strftime('%d', mktime(0, 0, 0, $return_value['month'] == 12 ? 1 : $return_value['month'] + 1, 0, $return_value['month'] == 12 ? $return_value['year'] + 1 : $return_value['year']));
 
 	return $return_value;
 }
@@ -1579,16 +1487,16 @@ function setEventStartEnd($eventOptions = array())
 	// If some form of string input was given, override individually defined options with it
 	if (isset($start_string))
 	{
-		$start_string_parsed = date_parse(convertDateToEnglish($start_string));
+		$start_string_parsed = date_parse(str_replace(',', '', convertDateToEnglish($start_string)));
 		if (empty($start_string_parsed['error_count']) && empty($start_string_parsed['warning_count']))
 		{
-			if ($start_string_parsed['year'] != false)
+			if ($start_string_parsed['year'] !== false)
 			{
 				$start_year = $start_string_parsed['year'];
 				$start_month = $start_string_parsed['month'];
 				$start_day = $start_string_parsed['day'];
 			}
-			if ($start_string_parsed['hour'] != false)
+			if ($start_string_parsed['hour'] !== false)
 			{
 				$start_hour = $start_string_parsed['hour'];
 				$start_minute = $start_string_parsed['minute'];
@@ -1598,16 +1506,16 @@ function setEventStartEnd($eventOptions = array())
 	}
 	if (isset($end_string))
 	{
-		$end_string_parsed = date_parse(convertDateToEnglish($end_string));
+		$end_string_parsed = date_parse(str_replace(',', '', convertDateToEnglish($end_string)));
 		if (empty($end_string_parsed['error_count']) && empty($end_string_parsed['warning_count']))
 		{
-			if ($end_string_parsed['year'] != false)
+			if ($end_string_parsed['year'] !== false)
 			{
 				$end_year = $end_string_parsed['year'];
 				$end_month = $end_string_parsed['month'];
 				$end_day = $end_string_parsed['day'];
 			}
-			if ($end_string_parsed['hour'] != false)
+			if ($end_string_parsed['hour'] !== false)
 			{
 				$end_hour = $end_string_parsed['hour'];
 				$end_minute = $end_string_parsed['minute'];
@@ -1617,16 +1525,10 @@ function setEventStartEnd($eventOptions = array())
 	}
 
 	// Validate input
-	$start_date_isvalid = checkdate($start_month, $start_day, $start_year);
-	$end_date_isvalid = checkdate($end_month, $end_day, $end_year);
-
-	$start_time_isset = (isset($start_hour) && isset($start_minute) && isset($start_second));
-	$d = date_parse(sprintf('%02d:%02d:%02d', $start_hour, $start_minute, $start_second));
-	$start_time_isvalid = ($d['error_count'] == 0 && $d['warning_count'] == 0) ? true : false;
-
-	$end_time_isset = (isset($end_hour) && isset($end_minute) && isset($end_second));
-	$d = date_parse(sprintf('%02d:%02d:%02d', $end_hour, $end_minute, $end_second));
-	$end_time_isvalid = ($d['error_count'] == 0 && $d['warning_count'] == 0) ? true : false;
+	$start_date_isvalid = isset($start_month, $start_day, $start_year) && checkdate($start_month, $start_day, $start_year);
+	$end_date_isvalid = isset($end_month, $end_day, $end_year) && checkdate($end_month, $end_day, $end_year);
+	$start_time_isvalid = isset($start_hour, $start_minute, $start_second) && $start_hour >= 0 && $start_hour < 25 && $start_minute >= 0 && $start_minute < 60 && $start_second >= 0 && $start_second < 60;
+	$end_time_isvalid = isset($end_hour, $end_minute, $end_second) && $end_hour >= 0 && $end_hour < 25 && $end_minute >= 0 && $end_minute < 60 && $end_second >= 0 && $end_second < 60;
 
 	// Uh-oh...
 	if ($start_date_isvalid === false)
@@ -1642,7 +1544,7 @@ function setEventStartEnd($eventOptions = array())
 		$end_day = $start_day;
 	}
 
-	if ($allday === true || $start_time_isset === false || $start_time_isvalid === false)
+	if ($allday || !$start_time_isvalid)
 	{
 		$allday = true;
 		$start_hour = 0;
@@ -1650,7 +1552,7 @@ function setEventStartEnd($eventOptions = array())
 		$start_second = 0;
 	}
 
-	if ($allday === true || $end_time_isvalid === false || $end_time_isset === false)
+	if ($allday || !$end_time_isvalid)
 	{
 		$end_hour = $start_hour;
 		$end_minute = $start_minute;
@@ -1761,12 +1663,12 @@ function buildEventDatetimes($row)
 	$end_object = date_create($row['end_date'] . (!$allday ? ' ' . $row['end_time'] : ''), $timezone_array[$row['timezone']]);
 
 	// Unix timestamps are good
-	$start['timestamp'] = date_format($start_object, 'U');
-	$end['timestamp'] = date_format($end_object, 'U');
+	$start['timestamp'] = (int) date_format($start_object, 'U');
+	$end['timestamp'] = (int) date_format($end_object, 'U');
 
 	// Datetime string without timezone  (e.g. '2016-12-28 22:45:30')
 	$start['datetime'] = date_format($start_object, 'Y-m-d H:i:s');
-	$end['datetime'] = date_format($start_object, 'Y-m-d H:i:s');
+	$end['datetime'] = date_format($end_object, 'Y-m-d H:i:s');
 
 	// ISO formatted datetime string, relative to UTC (e.g. '2016-12-29T05:45:30+00:00')
 	$start['iso_gmdate'] = gmdate('c', $start['timestamp']);
@@ -1894,17 +1796,20 @@ function convertDateToEnglish($date)
 		'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'
 	));
 	// Find all possible variants of AM and PM for this language.
-	$replacements[strtolower($txt['time_am'])] = 'AM';
-	$replacements[strtolower($txt['time_pm'])] = 'PM';
-	if (($am = strftime('%p', strtotime('01:00:00'))) !== 'p' && $am !== false)
+	if (trim($txt['time_am']) !== '' && trim($txt['time_pm']) !== '')
 	{
-		$replacements[strtolower($am)] = 'AM';
-		$replacements[strtolower(strftime('%p', strtotime('23:00:00')))] = 'PM';
+		$replacements[strtolower($txt['time_am'])] = 'AM';
+		$replacements[strtolower($txt['time_pm'])] = 'PM';
 	}
-	if (($am = strftime('%P', strtotime('01:00:00'))) !== 'P' && $am !== false)
+	if (($am = smf_strftime('%p', strtotime('01:00:00'))) !== 'p' && $am !== false)
 	{
 		$replacements[strtolower($am)] = 'AM';
-		$replacements[strtolower(strftime('%P', strtotime('23:00:00')))] = 'PM';
+		$replacements[strtolower(smf_strftime('%p', strtotime('23:00:00')))] = 'PM';
+	}
+	if (($am = smf_strftime('%P', strtotime('01:00:00'))) !== 'P' && $am !== false)
+	{
+		$replacements[strtolower($am)] = 'AM';
+		$replacements[strtolower(smf_strftime('%P', strtotime('23:00:00')))] = 'PM';
 	}
 
 	return strtr(strtolower($date), $replacements);

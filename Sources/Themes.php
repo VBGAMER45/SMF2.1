@@ -24,10 +24,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2025 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.5
  */
 
 if (!defined('SMF'))
@@ -1088,7 +1088,7 @@ function PickTheme()
 			$txt['theme_description'] = '';
 		}
 
-		$context['available_themes'][$id_theme]['thumbnail_href'] = $txt['theme_thumbnail_href'];
+		$context['available_themes'][$id_theme]['thumbnail_href'] = sprintf($txt['theme_thumbnail_href'], $settings['images_url']);
 		$context['available_themes'][$id_theme]['description'] = $txt['theme_description'];
 
 		// Are there any variants?
@@ -1343,8 +1343,23 @@ function InstallCopy()
 	mkdir($context['to_install']['theme_dir'] . '/css', 0777);
 	mkdir($context['to_install']['theme_dir'] . '/scripts', 0777);
 
+	// Create subdirectory for language files
+	mkdir($context['to_install']['theme_dir'] . '/languages', 0777);
+
 	// Copy over the default non-theme files.
-	$to_copy = array('/index.php', '/index.template.php', '/css/index.css', '/css/responsive.css', '/css/slider.min.css', '/css/rtl.css', '/css/calendar.css', '/css/calendar.rtl.css', '/css/admin.css', '/scripts/theme.js');
+	$to_copy = array(
+		'/index.php',
+		'/index.template.php',
+		'/css/admin.css',
+		'/css/calendar.css',
+		'/css/calendar.rtl.css',
+		'/css/index.css',
+		'/css/responsive.css',
+		'/css/rtl.css',
+		'/scripts/theme.js',
+		'/languages/index.php',
+		'/languages/Settings.english.php',
+	);
 
 	foreach ($to_copy as $file)
 	{
@@ -1409,6 +1424,8 @@ function InstallCopy()
 function InstallDir()
 {
 	global $themedir, $themeurl, $context;
+
+	$_REQUEST['theme_dir'] = rtrim($_REQUEST['theme_dir'], '\\/');
 
 	// Cannot use the theme dir as a theme dir.
 	if (!isset($_REQUEST['theme_dir']) || empty($_REQUEST['theme_dir']) || rtrim(realpath($_REQUEST['theme_dir']), '/\\') == realpath($themedir))
@@ -1569,7 +1586,7 @@ function SetJavaScript()
  */
 function EditTheme()
 {
-	global $context, $scripturl, $boarddir, $smcFunc, $txt;
+	global $context, $scripturl, $boarddir, $smcFunc, $txt, $sourcedir;
 
 	// @todo Should this be removed?
 	if (isset($_REQUEST['preview']))
@@ -1681,12 +1698,12 @@ function EditTheme()
 
 			$_POST['entire_file'] = rtrim(strtr($_POST['entire_file'], array("\r" => '', '   ' => "\t")));
 
+			require_once($sourcedir . '/Subs-Admin.php');
+
 			// Check for a parse error!
 			if (substr($_REQUEST['filename'], -13) == '.template.php' && is_writable($currentTheme['theme_dir']) && ini_get('display_errors'))
 			{
-				$fp = fopen($currentTheme['theme_dir'] . '/tmp_' . session_id() . '.php', 'w');
-				fwrite($fp, $_POST['entire_file']);
-				fclose($fp);
+				safe_file_write($currentTheme['theme_dir'] . '/tmp_' . session_id() . '.php', $_POST['entire_file']);
 
 				$error = @file_get_contents($currentTheme['theme_url'] . '/tmp_' . session_id() . '.php');
 				if (preg_match('~ <b>(\d+)</b><br( /)?' . '>$~i', $error) != 0)
@@ -1697,9 +1714,7 @@ function EditTheme()
 
 			if (!isset($error_file))
 			{
-				$fp = fopen($currentTheme['theme_dir'] . '/' . $_REQUEST['filename'], 'w');
-				fwrite($fp, $_POST['entire_file']);
-				fclose($fp);
+				safe_file_write($currentTheme['theme_dir'] . '/' . $_REQUEST['filename'], $_POST['entire_file']);
 
 				// Nuke any minified files and update $modSettings['browser_cache']
 				deleteAllMinified();

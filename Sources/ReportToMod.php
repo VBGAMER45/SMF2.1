@@ -6,10 +6,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -307,7 +307,7 @@ function reportPost($msg, $reason)
 	// Now just add our report...
 	if ($id_report)
 	{
-		$smcFunc['db_insert']('',
+		$id_comment = $smcFunc['db_insert']('',
 			'{db_prefix}log_reported_comments',
 			array(
 				'id_report' => 'int', 'id_member' => 'int', 'membername' => 'string',
@@ -317,7 +317,8 @@ function reportPost($msg, $reason)
 				$id_report, $user_info['id'], $user_info['name'],
 				$user_info['ip'], $reason, time(),
 			),
-			array('id_comment')
+			array('id_comment'),
+			1
 		);
 
 		// And get ready to notify people.
@@ -332,6 +333,7 @@ function reportPost($msg, $reason)
 				'sender_id' => $context['user']['id'],
 				'sender_name' => $context['user']['name'],
 				'time' => time(),
+				'comment_id' => $id_comment,
 			)), 0),
 			array('id_task')
 		);
@@ -370,7 +372,7 @@ function reportUser($id_member, $reason)
 	$user = $smcFunc['db_fetch_assoc']($request);
 	$smcFunc['db_free_result']($request);
 
-	$user_name = un_htmlspecialchars($user['real_name']) . ($user['real_name'] != $user['member_name'] ? ' (' . $user['member_name'] . ')' : '');
+	$user_name = $user['real_name'] . ($user['real_name'] != $user['member_name'] ? ' (' . $user['member_name'] . ')' : '');
 
 	$request = $smcFunc['db_query']('', '
 		SELECT id_report, ignore_all

@@ -4,10 +4,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2025 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.5
  */
 
 /**
@@ -21,7 +21,7 @@ function template_login()
 		<div class="login">
 			<div class="cat_bar">
 				<h3 class="catbg">
-					<img src="', $settings['images_url'], '/icons/login_hd.png" alt="" class="icon"> ', $txt['login'], '
+					<span class="main_icons login"></span> ', $txt['login'], '
 				</h3>
 			</div>
 			<div class="roundframe">
@@ -99,13 +99,13 @@ function template_login()
 							e.stopPropagation();
 
 							$.ajax({
-								url: form.prop("action") + ";ajax",
+								url: form.prop("action") + (form.prop("action").indexOf("?") !== -1 ? ";" : "?") + "ajax",
 								method: "POST",
 								headers: {
 									"X-SMF-AJAX": 1
 								},
 								xhrFields: {
-									withCredentials: allow_xhjr_credentials
+									withCredentials: typeof allow_xhjr_credentials !== "undefined" ? allow_xhjr_credentials : false
 								},
 								data: form.serialize(),
 								success: function(data) {';
@@ -123,7 +123,12 @@ function template_login()
 										form.parent().html($(data).find(".roundframe").html());';
 		else
 			echo '
-									window.location.reload();';
+									if ($(data).find(".roundframe").length > 0 && $(data).find("body").length == 0) {
+										form.parent().html($(data).find(".roundframe").html());
+									}
+									else {
+										window.location.reload();
+									}';
 
 		echo '
 								},
@@ -146,6 +151,13 @@ function template_login()
 	echo '
 					</script>
 				</form>';
+
+	if (!empty($context['can_register']))
+		echo '
+				<hr>
+				<div class="centertext">
+					', sprintf($txt['register_prompt'], $scripturl), '
+				</div>';
 
 	// It is a long story as to why we have this when we're clearly not going to use it.
 	if (!empty($context['from_ajax']))
@@ -207,6 +219,7 @@ function template_login_tfa()
 					form = $("#frmTfa");';
 
 	if (!empty($context['from_ajax']))
+	{
 		echo '
 					form.submit(function(e) {
 						// If we are submitting backup code, let normal workflow follow since it redirects a couple times into a different page
@@ -216,16 +229,47 @@ function template_login_tfa()
 						e.preventDefault();
 						e.stopPropagation();
 
-						$.post(form.prop("action"), form.serialize(), function(data) {
-							if (data.indexOf("<bo" + "dy") > -1)
-								document.location = ', JavaScriptEscape(!empty($_SESSION['login_url']) ? $_SESSION['login_url'] : $scripturl), ';
-							else {
-								form.parent().html($(data).find(".roundframe").html());
+						$.ajax({
+							url: form.prop("action") + (form.prop("action").indexOf("?") !== -1 ? ";" : "?") + "ajax",
+							method: "POST",
+							headers: {
+								"X-SMF-AJAX": 1
+							},
+							xhrFields: {
+								withCredentials: typeof allow_xhjr_credentials !== "undefined" ? allow_xhjr_credentials : false
+							},
+							data: form.serialize(),
+							success: function(data) {
+								if (data.indexOf("<bo" + "dy") > -1) {';
+
+		if (empty($context['valid_cors_found']) || $context['valid_cors_found'] == 'same')
+			echo '
+									document.location = ', JavaScriptEscape(!empty($_SESSION['login_url']) ? $_SESSION['login_url'] : $scripturl), ';';
+		else
+			echo '
+									window.location.reload();';
+
+		echo '
+								}
+								else {
+									window.location.reload();
+								}
+							},
+							error: function(xhr) {
+								var data = xhr.responseText;
+								if (data.indexOf("<bo" + "dy") > -1) {
+									document.open();
+									document.write(data);
+									document.close();
+								}
+								else
+									form.parent().html($(data).filter("#fatal_error").html());
 							}
 						});
 
 						return false;
 					});';
+	}
 
 	echo '
 					form.find("input[name=backup]").click(function(e) {
@@ -266,7 +310,7 @@ function template_kick_guest()
 	echo '
 			<div class="cat_bar">
 				<h3 class="catbg">
-					<img src="', $settings['images_url'], '/icons/login_hd.png" alt="" class="icon"> ', $txt['login'], '
+					<span class="main_icons login"></span> ', $txt['login'], '
 				</h3>
 			</div>
 			<div class="roundframe">
@@ -367,7 +411,7 @@ function template_admin_login()
 		<div class="login" id="admin_login">
 			<div class="cat_bar">
 				<h3 class="catbg">
-					<img src="', $settings['images_url'], '/icons/login_hd.png" alt="" class="icon"> ', $txt['login'], '
+					<span class="main_icons login"></span> ', $txt['login'], '
 				</h3>
 			</div>
 			<div class="roundframe centertext">';

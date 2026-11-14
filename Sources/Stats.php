@@ -7,10 +7,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -169,22 +169,19 @@ function DisplayStats()
 				)
 			);
 			$row = $smcFunc['db_fetch_assoc']($result);
-			$default_gender = !empty($row['default_value']) ? $row['default_value'] : 'None';
+			$default_gender = !empty($row['default_value']) ? $row['default_value'] : '{gender_0}';
 			$smcFunc['db_free_result']($result);
 
 			$result = $smcFunc['db_query']('', '
-				SELECT COUNT(*) AS total_members,  gender
-				FROM (
-					SELECT mem.id_member, COALESCE(t.value, {string:default_gender}) AS gender
-					FROM {db_prefix}members AS mem
-					LEFT JOIN {db_prefix}themes AS t ON (
-						mem.id_member = t.id_member AND
-						t.variable = {string:gender_var} AND
-						t.id_theme = {int:default_theme}
-						)
-					WHERE is_activated = {int:is_activated}
-				) AS a
-				GROUP BY gender',
+				SELECT COUNT(*) AS total_members, value AS gender
+				FROM {db_prefix}members AS mem
+				INNER JOIN {db_prefix}themes AS t ON (
+					t.id_member = mem.id_member
+					AND t.variable = {string:gender_var}
+					AND t.id_theme = {int:default_theme}
+				)
+				WHERE is_activated = {int:is_activated}
+				GROUP BY value',
 				array(
 					'gender_var' => 'cust_gender',
 					'default_theme' => 1,
@@ -192,18 +189,20 @@ function DisplayStats()
 					'default_gender' => $default_gender,
 				)
 			);
-			$context['gender'] = array();
+			$context['gender'] = array($default_gender => 0);
 			while ($row = $smcFunc['db_fetch_assoc']($result))
 			{
 				$context['gender'][$row['gender']] = $row['total_members'];
 			}
 			$smcFunc['db_free_result']($result);
 
+			$context['gender'][$default_gender] += $modSettings['totalMembers'] - array_sum($context['gender']);
+
 			cache_put_data('stats_gender', $context['gender'], 240);
 		}
 	}
 
-	$date = strftime('%Y-%m-%d', forum_time(false));
+	$date = smf_strftime('%Y-%m-%d', time());
 
 	// Members online so far today.
 	$result = $smcFunc['db_query']('', '
@@ -473,9 +472,6 @@ function DisplayStats()
 	while ($row_members = $smcFunc['db_fetch_assoc']($members_result))
 	{
 		$i = array_search($row_members['id_member'], array_keys($members));
-		// skip all not top 10
-		if ($i > 10)
-			continue;
 
 		$context['stats_blocks']['starters'][$i] = array(
 			'name' => $row_members['real_name'],
@@ -488,8 +484,12 @@ function DisplayStats()
 		if ($max_num < $members[$row_members['id_member']])
 			$max_num = $members[$row_members['id_member']];
 	}
-	ksort($context['stats_blocks']['starters']);
 	$smcFunc['db_free_result']($members_result);
+
+	// Starters with no member to list, such as guests and deleted members,
+	// were counted but not found, so the top ten are the first ten found.
+	ksort($context['stats_blocks']['starters']);
+	$context['stats_blocks']['starters'] = array_slice($context['stats_blocks']['starters'], 0, 10);
 
 	foreach ($context['stats_blocks']['starters'] as $i => $topic)
 	{
@@ -833,22 +833,11 @@ function SMStats()
 	else
 	{
 		// Connect to the collection script.
-		$fp = @fsockopen('www.simplemachines.org', 443, $errno, $errstr);
-		if (!$fp)
-			$fp = @fsockopen('www.simplemachines.org', 80, $errno, $errstr);
-		if ($fp)
-		{
-			$length = strlen($stats_to_send);
+		$res = fetch_web_data('https://www.simplemachines.org/smf/stats/collect_stats.php', $stats_to_send);
 
-			$out = 'POST /smf/stats/collect_stats.php HTTP/1.1' . "\r\n";
-			$out .= 'Host: www.simplemachines.org' . "\r\n";
-			$out .= 'user-agent: '. SMF_USER_AGENT . "\r\n";
-			$out .= 'content-type: application/x-www-form-urlencoded' . "\r\n";
-			$out .= 'connection: Close' . "\r\n";
-			$out .= 'content-length: ' . $length . "\r\n\r\n";
-			$out .= $stats_to_send . "\r\n";
-			fwrite($fp, $out);
-			fclose($fp);
+		// Try one more time, this time without https.
+		if ($res !== '1') {
+			fetch_web_data('http://www.simplemachines.org/smf/stats/collect_stats.php', $stats_to_send);
 		}
 	}
 

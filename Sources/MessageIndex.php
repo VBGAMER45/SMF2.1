@@ -8,10 +8,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2025 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.7
  */
 
 if (!defined('SMF'))
@@ -87,7 +87,7 @@ function MessageIndex()
 				$context['robot_no_index'] = true;
 		}
 	}
-	if (!empty($_REQUEST['start']) && (!is_numeric($_REQUEST['start']) || $_REQUEST['start'] % $context['messages_per_page'] != 0))
+	if (!empty($_REQUEST['start']) && (!is_numeric($_REQUEST['start']) || $_REQUEST['start'] % $context['topics_per_page'] != 0))
 		$context['robot_no_index'] = true;
 
 	// If we can view unapproved messages and there are some build up a list.
@@ -437,7 +437,7 @@ function MessageIndex()
 
 			// If we can use all, show all.
 			if (!empty($modSettings['enableAllMessages']) && $row['num_replies'] + 1 < $modSettings['enableAllMessages'])
-				$pages .= ' &nbsp;<a href="' . $scripturl . '?topic=' . $row['id_topic'] . '.0;all">' . $txt['all'] . '</a>';
+				$pages .= sprintf(strtr($settings['page_index']['page'], array('{URL}' => $scripturl . '?topic=' . $row['id_topic'] . '.0;all')), '', $txt['all']);
 		}
 		else
 			$pages = '';
@@ -486,7 +486,7 @@ function MessageIndex()
 					'link' => !empty($row['first_id_member']) ? '<a href="' . $scripturl . '?action=profile;u=' . $row['first_id_member'] . '" title="' . sprintf($txt['view_profile_of_username'], $row['first_display_name']) . '" class="preview">' . $row['first_display_name'] . '</a>' : $row['first_display_name']
 				),
 				'time' => timeformat($row['first_poster_time']),
-				'timestamp' => forum_time(true, $row['first_poster_time']),
+				'timestamp' => $row['first_poster_time'],
 				'subject' => $row['first_subject'],
 				'preview' => $row['first_body'],
 				'icon' => $row['first_icon'],
@@ -504,7 +504,7 @@ function MessageIndex()
 					'link' => !empty($row['last_id_member']) ? '<a href="' . $scripturl . '?action=profile;u=' . $row['last_id_member'] . '">' . $row['last_display_name'] . '</a>' : $row['last_display_name']
 				),
 				'time' => timeformat($row['last_poster_time']),
-				'timestamp' => forum_time(true, $row['last_poster_time']),
+				'timestamp' => $row['last_poster_time'],
 				'subject' => $row['last_subject'],
 				'preview' => $row['last_body'],
 				'icon' => $row['last_icon'],
@@ -947,6 +947,23 @@ function QuickModeration()
 			if (empty($moveCache[1][$topic]))
 				continue;
 
+			// Never move topics to redirect boards
+			$redirect_boards = array();
+			$request = $smcFunc['db_query']('', '
+				SELECT id_board
+				FROM {db_prefix}boards
+				WHERE redirect != {string:blank_redirect}',
+				array(
+					'blank_redirect' => '',
+				)
+			);
+			while ($row = $smcFunc['db_fetch_row']($request))
+				$redirect_boards[] = $row[0];
+			$smcFunc['db_free_result']($request);
+
+			if (in_array($moveCache[1][$topic], $redirect_boards))
+				continue;
+
 			$moveCache[0][] = $topic;
 		}
 		elseif ($action == 'remove')
@@ -1312,6 +1329,12 @@ function QuickModeration()
 	updateSettings(array(
 		'calendar_updated' => time(),
 	));
+	
+	if (!empty($cache_enable) && $cache_enable >= 3) {
+		foreach ($affectedBoards as $b => $junk) {
+			cache_put_data('board-' . $b, null);
+		}
+	}
 
 	if (!empty($affectedBoards))
 		updateLastMessages(array_keys($affectedBoards));

@@ -8,10 +8,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -559,6 +559,16 @@ function attachmentChecks($attachID)
 				$_SESSION['temp_attachments'][$attachID]['type'] = 'image/' . $context['valid_image_types'][$size[2]];
 		}
 	}
+	// SVGs have their own set of security checks.
+	elseif ($_SESSION['temp_attachments'][$attachID]['type'] === 'image/svg+xml')
+	{
+		require_once($sourcedir . '/Subs-Graphics.php');
+		if (!checkSvgContents($_SESSION['temp_attachments'][$attachID]['tmp_name']))
+		{
+			$_SESSION['temp_attachments'][$attachID]['errors'][] = 'bad_attachment';
+			return false;
+		}
+	}
 
 	// Is there room for this sucker?
 	if (!empty($modSettings['attachmentDirSizeLimit']) || !empty($modSettings['attachmentDirFileLimit']))
@@ -685,7 +695,13 @@ function createAttachment(&$attachmentOptions)
 
 	// If this is an image we need to set a few additional parameters.
 	$size = @getimagesize($attachmentOptions['tmp_name']);
-	list ($attachmentOptions['width'], $attachmentOptions['height']) = $size;
+	list ($attachmentOptions['width'], $attachmentOptions['height']) = $size !== false ? $size : array(0,0);
+
+	if (!empty($attachmentOptions['mime_type']) && $attachmentOptions['mime_type'] === 'image/svg+xml')
+	{
+		foreach (getSvgSize($attachmentOptions['tmp_name']) as $key => $value)
+			$attachmentOptions[$key] = $value === INF ? 0 : $value;
+	}
 
 	if (function_exists('exif_read_data') && ($exif_data = @exif_read_data($attachmentOptions['tmp_name'])) !== false && !empty($exif_data['Orientation']))
 		if (in_array($exif_data['Orientation'], [5, 6, 7, 8]))
@@ -1003,7 +1019,10 @@ function parseAttachBBC($attachID = 0)
 	$attachInfo = getAttachMsgInfo($attachID);
 
 	// There is always the chance this attachment no longer exists or isn't associated to a message anymore...
-	if (empty($attachInfo) || empty($attachInfo['msg']) && empty($context['preview_message']))
+	if (empty($attachInfo))
+		return 'attachments_no_data_loaded';
+
+	if (empty($attachInfo['msg']) && empty($context['preview_message']))
 		return 'attachments_no_msg_associated';
 
 	// Can the user view attachments on the board that holds the attachment's original post?
@@ -1057,18 +1076,6 @@ function parseAttachBBC($attachID = 0)
 	if ($check_board_perms && !in_array($attachContext['board'], $view_attachment_boards))
 		return 'attachments_not_allowed_to_see';
 
-	// Previewing much? No msg ID has been set yet.
-	if (!empty($context['preview_message']))
-	{
-		$attachContext['href'] = $scripturl . '?action=dlattach;attach=' . $attachID . ';type=preview';
-
-		$attachContext['link'] = '<a href="' . $scripturl . '?action=dlattach;attach=' . $attachID . ';type=preview' . (empty($attachContext['is_image']) ? ';file' : '') . '" class="bbc_link">' . $smcFunc['htmlspecialchars']($attachContext['name']) . '</a>';
-
-		// Fix the thumbnail too, if the image has one.
-		if (!empty($attachContext['thumbnail']) && !empty($attachContext['thumbnail']['has_thumb']))
-			$attachContext['thumbnail']['href'] = $scripturl . '?action=dlattach;attach=' . $attachContext['thumbnail']['id'] . ';image;type=preview';
-	}
-
 	// You may or may not want to show this under the post.
 	if (!empty($modSettings['dont_show_attach_under_post']) && !isset($context['show_attach_under_post'][$attachID]))
 		$context['show_attach_under_post'][$attachID] = $attachID;
@@ -1085,7 +1092,7 @@ function parseAttachBBC($attachID = 0)
  *
  * @param array $attachIDs An array of attachments IDs.
  *
- * @return array.
+ * @return array
  */
 function getRawAttachInfo($attachIDs)
 {
@@ -1131,7 +1138,7 @@ function getRawAttachInfo($attachIDs)
  *
  * @param int $attachID the attachment ID to load info from.
  *
- * @return array.
+ * @return array
  */
 function getAttachMsgInfo($attachID)
 {
@@ -1158,9 +1165,12 @@ function getAttachMsgInfo($attachID)
 	}
 
 	$request = $smcFunc['db_query']('', '
-		SELECT a.id_msg AS msg, m.id_topic AS topic, m.id_board AS board
+		SELECT
+			a.id_msg AS msg, m.id_topic AS topic, m.id_board AS board, m.id_member, m.approved, m.poster_time,
+			t.locked AS is_locked, t.id_member_started
 		FROM {db_prefix}attachments AS a
 			LEFT JOIN {db_prefix}messages AS m ON (m.id_msg = a.id_msg)
+			LEFT JOIN {db_prefix}topics AS t ON (t.id_topic = m.id_topic)
 		WHERE id_attach = {int:id_attach}
 		LIMIT 1',
 		array(
@@ -1203,12 +1213,12 @@ function loadAttachmentContext($id_msg, $attachments)
 		{
 			$attachmentData[$i] = array(
 				'id' => $attachment['id_attach'],
-				'name' => preg_replace('~&amp;#(\\d{1,7}|x[0-9a-fA-F]{1,6});~', '&#\\1;', $smcFunc['htmlspecialchars']($attachment['filename'])),
+				'name' => preg_replace('~&amp;#(\\d{1,7}|x[0-9a-fA-F]{1,6});~', '&#\\1;', $smcFunc['htmlspecialchars'](un_htmlspecialchars($attachment['filename']))),
 				'downloads' => $attachment['downloads'],
 				'size' => ($attachment['filesize'] < 1024000) ? round($attachment['filesize'] / 1024, 2) . ' ' . $txt['kilobyte'] : round($attachment['filesize'] / 1024 / 1024, 2) . ' ' . $txt['megabyte'],
 				'byte_size' => $attachment['filesize'],
-				'href' => $scripturl . '?action=dlattach;topic=' . $attachment['topic'] . '.0;attach=' . $attachment['id_attach'],
-				'link' => '<a href="' . $scripturl . '?action=dlattach;topic=' . $attachment['topic'] . '.0;attach=' . $attachment['id_attach'] . '" class="bbc_link">' . $smcFunc['htmlspecialchars']($attachment['filename']) . '</a>',
+				'href' => $scripturl . '?action=dlattach;attach=' . $attachment['id_attach'],
+				'link' => '<a href="' . $scripturl . '?action=dlattach;attach=' . $attachment['id_attach'] . '" class="bbc_link">' . $smcFunc['htmlspecialchars'](un_htmlspecialchars($attachment['filename'])) . '</a>',
 				'is_image' => !empty($attachment['width']) && !empty($attachment['height']),
 				'is_approved' => $attachment['approved'],
 				'topic' => $attachment['topic'],
@@ -1314,7 +1324,7 @@ function loadAttachmentContext($id_msg, $attachments)
 			if (!empty($attachment['id_thumb']))
 				$attachmentData[$i]['thumbnail'] = array(
 					'id' => $attachment['id_thumb'],
-					'href' => $scripturl . '?action=dlattach;topic=' . $attachment['topic'] . '.0;attach=' . $attachment['id_thumb'] . ';image',
+					'href' => $scripturl . '?action=dlattach;attach=' . $attachment['id_thumb'] . ';image;thumb',
 				);
 			$attachmentData[$i]['thumbnail']['has_thumb'] = !empty($attachment['id_thumb']);
 
@@ -1343,6 +1353,17 @@ function loadAttachmentContext($id_msg, $attachments)
 
 			if (!$attachmentData[$i]['thumbnail']['has_thumb'])
 				$attachmentData[$i]['downloads']++;
+
+			// Describe undefined dimensions as "unknown".
+			// This can happen if an uploaded SVG is missing some key data.
+			foreach (array('real_width', 'real_height') as $key)
+			{
+				if (!isset($attachmentData[$i][$key]) || $attachmentData[$i][$key] === INF)
+				{
+					loadLanguage('Admin');
+					$attachmentData[$i][$key] = ' (' . $txt['unknown'] . ') ';
+				}
+			}
 		}
 	}
 
@@ -1367,11 +1388,11 @@ function loadAttachmentContext($id_msg, $attachments)
  *
  * @param int array $msgIDs the message ID to load info from.
  *
- * @return void.
+ * @return void
  */
 function prepareAttachsByMsg($msgIDs)
 {
-	global $context, $modSettings, $smcFunc;
+	global $context, $modSettings, $smcFunc, $sourcedir;
 
 	if (empty($context['loaded_attachments']))
 		$context['loaded_attachments'] = array();
@@ -1379,11 +1400,24 @@ function prepareAttachsByMsg($msgIDs)
 	else
 		$msgIDs = array_diff($msgIDs, array_keys($context['loaded_attachments']), array(0));
 
-	if (!empty($context['preview_message']))
-		$msgIDs[] = 0;
+	// Ensure that $msgIDs doesn't contain zero or non-integers.
+	$msgIDs = array_filter(array_map('intval', $msgIDs));
 
-	if (!empty($msgIDs))
+	if (!empty($msgIDs) || !empty($_SESSION['attachments_can_preview']))
 	{
+		// Where clause - there may or may not be msg ids, & may or may not be attachs to preview,
+		// depending on post vs edit, inserted or not, preview or not, post error or not, etc.
+		// Either way, they may be needed in a display of a list of posts or in the dropzone 'mock' list of thumbnails.
+		$msg_or_att = '';
+		if (!empty($msgIDs))
+			$msg_or_att .= 'a.id_msg IN ({array_int:message_id}) ';
+		if (!empty($msgIDs) && !empty($_SESSION['attachments_can_preview']))
+			$msg_or_att .= 'OR ';
+		if (!empty($_SESSION['attachments_can_preview']))
+			$msg_or_att .= 'a.id_attach IN ({array_int:preview_attachments})';
+
+		// This tries to get all attachments for the page being displayed, to build a cache of attach info.
+		// This is also being used by POST, so it may need to grab attachs known only in the session.
 		$request = $smcFunc['db_query']('', '
 			SELECT
 				a.id_attach, a.id_folder, a.id_msg, a.filename, a.file_hash, COALESCE(a.size, 0) AS filesize, a.downloads, a.approved, m.id_topic AS topic, m.id_board AS board, m.id_member, a.mime_type,
@@ -1393,10 +1427,11 @@ function prepareAttachsByMsg($msgIDs)
 				LEFT JOIN {db_prefix}attachments AS thumb ON (thumb.id_attach = a.id_thumb)') . '
 				LEFT JOIN {db_prefix}messages AS m ON (m.id_msg = a.id_msg)
 			WHERE a.attachment_type = {int:attachment_type}
-				AND a.id_msg IN ({array_int:message_id})',
+				AND (' . $msg_or_att . ')',
 			array(
 				'message_id' => $msgIDs,
 				'attachment_type' => 0,
+				'preview_attachments' => !empty($_SESSION['attachments_can_preview']) ? array_keys(array_filter($_SESSION['attachments_can_preview'])) : array(0),
 			)
 		);
 		$rows = $smcFunc['db_fetch_all']($request);
@@ -1404,6 +1439,30 @@ function prepareAttachsByMsg($msgIDs)
 
 		foreach ($rows as $row)
 		{
+			// SVGs are special.
+			if ($row['mime_type'] === 'image/svg+xml')
+			{
+				if (empty($row['width']) || empty($row['height']))
+				{
+					require_once($sourcedir . '/Subs-Graphics.php');
+
+					$row = array_merge($row, getSvgSize(getAttachmentFilename($row['filename'], $row['id_attach'], $row['id_folder'])));
+				}
+
+				// SVG is its own thumbnail.
+				if (isset($row['id_thumb']))
+				{
+					$row['id_thumb'] = $row['id_attach'];
+
+					// For SVGs, we don't need to calculate thumbnail size precisely.
+					$row['thumb_width'] = min($row['width'], !empty($modSettings['attachmentThumbWidth']) ? $modSettings['attachmentThumbWidth'] : 1000);
+					$row['thumb_height'] = min($row['height'], !empty($modSettings['attachmentThumbHeight']) ? $modSettings['attachmentThumbHeight'] : 1000);
+
+					// Must set the thumbnail's CSS dimensions manually.
+					addInlineCss('img#thumb_' . $row['id_thumb'] . ':not(.original_size) {width: ' . $row['thumb_width'] . 'px; height: ' . $row['thumb_height'] . 'px;}');
+				}
+			}
+
 			if (empty($context['loaded_attachments'][$row['id_msg']]))
 				$context['loaded_attachments'][$row['id_msg']] = array();
 

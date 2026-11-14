@@ -3,10 +3,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2025 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.7
  */
 
 (function ($) {
@@ -23,6 +23,17 @@
 					for (var i = 0, n = XMLDoc.getElementsByTagName('quote')[0].childNodes.length; i < n; i++)
 						text += XMLDoc.getElementsByTagName('quote')[0].childNodes[i].nodeValue;
 					self.insert(text);
+
+					// Manually move cursor to after the quote.
+					var
+						rangeHelper = self.getRangeHelper(),
+						parent = rangeHelper.parentNode();
+					if (parent && parent.nodeName === 'BLOCKQUOTE')
+					{
+						var range = rangeHelper.selectedRange();
+						range.setStartAfter(parent);
+						rangeHelper.selectRange(range);
+					}
 
 					ajax_indicator(false);
 				}
@@ -45,6 +56,7 @@
 			return current_value;
 		},
 		appendEmoticon: function (code, emoticon, description) {
+			var base = this;
 			if (emoticon == '')
 				line.append($('<br>'));
 			else
@@ -84,7 +96,7 @@
 			var popup_exists = false;
 			content = $('<div class="sceditor-insertemoticon">');
 			line = $('<div>');
-			base = this;
+			var base = this;
 
 			for (smiley_popup in this.opts.emoticons.popup)
 			{
@@ -95,9 +107,10 @@
 			{
 				base.opts.emoticons.more = base.opts.emoticons.popup;
 				moreButton = $('<div class="sceditor-more-button sceditor-more button">').text(this._('More')).click(function () {
-					if ($(".sceditor-smileyPopup").length > 0)
+					var smileyPopup = base.editorMainWrapper.querySelector(".sceditor-smileyPopup");
+					if (smileyPopup)
 					{
-						$(".sceditor-smileyPopup").fadeIn('fast');
+						$(smileyPopup).fadeIn('fast');
 					}
 					else
 					{
@@ -111,7 +124,14 @@
 
 						popupContent.append(titlebar);
 						closeButton = $('<span class="button">').text(base._('Close')).click(function () {
-							$(".sceditor-smileyPopup").fadeOut('fast');
+							$(base.editorMainWrapper.querySelector(".sceditor-smileyPopup")).fadeOut('fast');
+						});
+						$(document).mouseup(function (e) {
+							if (allowHide && !popupContent.is(e.target) && popupContent.has(e.target).length === 0)
+								$(smileyPopup).fadeOut('fast');
+						}).keyup(function (e) {
+							if (e.keyCode === 27)
+								$(smileyPopup).fadeOut('fast');
 						});
 
 						$.each(emoticons, function( code, emoticon ) {
@@ -134,9 +154,9 @@
 						adjheight = closeButton.height() + titlebar.height();
 						$dropdown = $('<div class="centerbox sceditor-smileyPopup">')
 							.append(popupContent)
-							.appendTo($('.sceditor-container'));
+							.appendTo(base.editorMainWrapper);
 
-						$('.sceditor-smileyPopup').animaDrag({
+						$(base.editorMainWrapper.querySelector('.sceditor-smileyPopup')).animaDrag({
 							speed: 150,
 							interval: 120,
 							during: function (e) {
@@ -161,14 +181,13 @@
 			});
 			if (line.children().length > 0)
 				content.append(line);
-			$(".sceditor-toolbar").append(content);
+			$(base.editorMainWrapper.querySelector(".sceditor-toolbar")).append(content);
 			if (typeof moreButton !== "undefined")
 				content.append($('<center/>').append(moreButton));
 		}
 	};
 
 	var createFn = sceditor.create;
-	var isPatched = false;
 
 	sceditor.create = function (textarea, options) {
 		// Call the original create function
@@ -177,8 +196,9 @@
 		// Constructor isn't exposed so get reference to it when
 		// creating the first instance and extend it then
 		var instance = sceditor.instance(textarea);
-		if (!isPatched && instance) {
+		if (instance && typeof instance.isPatched == 'undefined') {
 			sceditor.utils.extend(instance.constructor.prototype, extensionMethods);
+			instance.editorMainWrapper = instance.getContentAreaContainer().closest('.sceditor-container');
 			window.addEventListener('beforeunload', instance.updateOriginal, false);
 
 			/*
@@ -186,11 +206,11 @@
 			 * toolbars and tons of smilies play havoc with this.
 			 * Only resize the text areas instead.
 			 */
-			document.querySelector(".sceditor-container").removeAttribute("style");
-			document.querySelector(".sceditor-container textarea").style.height = options.height;
-			document.querySelector(".sceditor-container textarea").style.flexBasis = options.height;
+			instance.editorMainWrapper.removeAttribute("style");
+			instance.editorMainWrapper.querySelector("textarea").style.height = options.height;
+			instance.editorMainWrapper.querySelector("textarea").style.flexBasis = options.height;
 
-			isPatched = true;
+			instance.isPatched = true;
 		}
 	};
 })(jQuery);
@@ -209,25 +229,19 @@ sceditor.command.set(
 			var editor = this;
 
 			editor.commands.link._dropDown(editor, caller, function (url, text) {
-				// needed for IE to restore the last range
-				editor.focus();
-
-				// If there is no selected text then must set the URL as
-				// the text. Most browsers do this automatically, sadly
-				// IE doesn't.
 				if (!editor.getRangeHelper().selectedHtml() || text) {
 					text = text || url;
 
 					editor.wysiwygEditorInsertHtml(
-						'<a target="_blank" rel="noopener" href="' +
+						'<a data-type="url" href="' +
 						sceditor.escapeEntities(url) + '">' +
 						sceditor.escapeEntities(text, true) + '</a>'
 					);
 				} else {
 					// Can't just use `editor.execCommand('createlink', url)`
-					// because we need to set the target attribute.
+					// because we need to set a custom attribute.
 					editor.wysiwygEditorInsertHtml(
-						'<a target="_blank" rel="noopener" href="' +
+						'<a data-type="url" href="' +
 						sceditor.escapeEntities(url) + '">', '</a>'
 					);
 				}
@@ -292,7 +306,23 @@ sceditor.command.set(
 
 sceditor.command.set(
 	'maximize', {
-		shortcut: ''
+		shortcut: '',
+		exec: function (caller)
+		{		
+			if (this.editorMainWrapper.style.height == '') {
+				this.height(this.editorMainWrapper.offsetHeight, this.editorMainWrapper.offsetHeight);
+			}
+			this.maximize(!this.maximize());
+			this.focus();
+		},
+		txtExec: function (caller)
+		{		
+			if (this.editorMainWrapper.style.height == '') {
+				this.height(this.editorMainWrapper.offsetHeight, this.editorMainWrapper.offsetHeight);
+			}
+			this.maximize(!this.maximize());
+			this.focus();
+		}
 	}
 );
 
@@ -325,18 +355,20 @@ sceditor.command.set(
 				caller,
 				function (email, text)
 				{
-					// needed for IE to reset the last range
-					editor.focus();
-
 					if (!editor.getRangeHelper().selectedHtml() || text)
 						editor.wysiwygEditorInsertHtml(
-							'<a href="' +
+							'<a data-type="email" href="' +
 							'mailto:' + sceditor.escapeEntities(email) + '">' +
 								sceditor.escapeEntities(text || email) +
 							'</a>'
 						);
 					else
-						editor.execCommand('createlink', 'mailto:' + email);
+						// Can't just use `editor.execCommand('createlink', email)`
+						// because we need to set a custom attribute.
+						editor.wysiwygEditorInsertHtml(
+							'<a data-type="email" href="mailto:' +
+							sceditor.escapeEntities(email) + '">', '</a>'
+						);
 				}
 			);
 		},
@@ -632,8 +664,11 @@ sceditor.formats.bbcode.set(
 sceditor.formats.bbcode.set(
 	'attach', {
 		tags: {
-			attach: {
-				src: null
+			img: {
+				'data-attachment': null
+			},
+			a: {
+				'data-attachment': null
 			}
 		},
 		allowsEmpty: true,
@@ -657,7 +692,7 @@ sceditor.formats.bbcode.set(
 
 			if (typeof current_attachments !== "undefined")
 				for (index = 0; index < current_attachments.length; ++index) {
-					if (current_attachments[index]['attachID'] == id) {
+					if (current_attachments[index]['attachID'] == element.attr('data-attachment')) {
 						attach_type = current_attachments[index]['type'];
 						break;
 					}
@@ -706,7 +741,7 @@ sceditor.formats.bbcode.set(
 				return '[attach' + attribs + ']' + content + '[/attach]';
 			}
 
-			attribs += ' data-attachment="' + id + '"'
+			attribs += ' data-type="attachment" data-attachment="' + id + '"';
 			if (typeof attrs.alt !== "undefined")
 				attribs += ' alt="' + attrs.alt + '"';
 
@@ -718,14 +753,14 @@ sceditor.formats.bbcode.set(
 				if (typeof attrs.height !== "undefined")
 					attribs += ' height="' + attrs.height + '"';
 
-				var contentUrl = smf_scripturl +'?action=dlattach;attach='+ id + ';type=preview;thumb';
+				var contentUrl = smf_scripturl +'?action=dlattach;attach='+ id + ';preview;image';
 				contentIMG = new Image();
 					contentIMG.src = contentUrl;
 			}
 
 			// If not an image, show a boring ol' link
 			if (typeof contentUrl === "undefined" || contentIMG.getAttribute('width') == 0)
-				return '<a href="' + smf_scripturl + '?action=dlattach;attach=' + id + ';type=preview;file"' + attribs + '>' + content + '</a>';
+				return '<a href="' + smf_scripturl + '?action=dlattach;attach=' + id + ';file"' + attribs + '>' + content + '</a>';
 			// Show our purdy li'l picture
 			else
 				return '<img' + attribs + ' src="' + contentUrl + '">';
@@ -734,49 +769,45 @@ sceditor.formats.bbcode.set(
 );
 
 sceditor.formats.bbcode.set(
-	'url', {
+	'email', {
 		allowsEmpty: true,
-		quoteType: $.sceditor.BBCodeParser.QuoteType.never,
+		quoteType: sceditor.BBCodeParser.QuoteType.never,
 		tags: {
 			a: {
-				href: null
+				'data-type': ['email']
 			}
 		},
-		format: function (element, content) {
-			var element = $(element),
-				url = element.attr('href');
+		format: function (element, content)
+		{
+			if (decodeURI(element.href.substr(7)) === content)
+				return '[email]' + content + '[/email]';
 
-			// make sure this link is not an e-mail, if it is return e-mail BBCode
-			if (url.substr(0, 7) === 'mailto:')
-				return '[email=' + url.substr(7) + ']' + content + '[/email]';
-
-			if (typeof element.attr('target') !== "undefined")
-				return '[url=\"' + decodeURI(url) + '\"]' + content + '[/url]';
-
-			// A mention?
-			else if (typeof element.attr('data-mention') !== "undefined")
-				return '[member='+ element.attr('data-mention') +']'+ content.replace('@','') +'[/member]';
-
-			// Is this an attachment?
-			else if (typeof element.attr('data-attachment') !== "undefined")
-			{
-				var attribs = ' id=' + element.attr('data-attachment');
-				if (typeof element.attr('alt') !== "undefined")
-					attribs += ' alt=' + element.attr('alt');
-				if (typeof element.attr('data-type') !== "undefined")
-					attribs += ' type=' + element.attr("data-type");
-
-				return '[attach' + attribs + ']' + content + '[/attach]';
-			}
-
-			else
-				return '[iurl=\"' + decodeURI(url) + '\"]' + content + '[/iurl]';
+			return '[email=' + element.href.substr(7) + ']' + content + '[/email]';
 		},
-		html: function (token, attrs, content) {
-			if (typeof attrs.defaultattr === "undefined" || attrs.defaultattr.length === 0)
-				attrs.defaultattr = content;
+		html: function (token, attrs, content)
+		{
+			return '<a data-type="email" href="mailto:' + sceditor.escapeEntities(attrs.defaultattr || content, true) + '">' + content + '</a>';
+		}
+	}
+);
 
-			return '<a target="_blank" rel="noopener" href="' + encodeURI(attrs.defaultattr) + '">' + content + '</a>';
+sceditor.formats.bbcode.set(
+	'url', {
+		allowsEmpty: true,
+		quoteType: sceditor.BBCodeParser.QuoteType.always,
+		format(element, content)
+		{
+			if (element.hasAttribute('data-type') && element.getAttribute('data-type') != 'url')
+				return content;
+
+			if (decodeURI(element.href).replace(/\/$/, '') === content.replace(/\/$/, ''))
+				return '[url]' + content + '[/url]';
+
+			return '[url="' + decodeURI(element.href) + '"]' + content + '[/url]';
+		},
+		html: function (token, attrs, content)
+		{
+			return '<a data-type="url" href="' + encodeURI(attrs.defaultattr || content) + '">' + content + '</a>';
 		}
 	}
 );
@@ -784,13 +815,22 @@ sceditor.formats.bbcode.set(
 sceditor.formats.bbcode.set(
 	'iurl', {
 		allowsEmpty: true,
-		quoteType: $.sceditor.BBCodeParser.QuoteType.never,
-		html: function (token, attrs, content) {
+		quoteType: sceditor.BBCodeParser.QuoteType.always,
+		tags: {
+			a: {
+				'data-type': ['iurl']
+			}
+		},
+		format: function (element, content)
+		{
+			if (decodeURI(element.href).replace(/\/$/, '') === content.replace(/\/$/, ''))
+				return '[iurl]' + content + '[/iurl]';
 
-			if (typeof attrs.defaultattr === "undefined" || attrs.defaultattr.length === 0)
-				attrs.defaultattr = content;
-
-			return '<a href="' + encodeURI(attrs.defaultattr) + '">' + content + '</a>';
+			return '[iurl="' + decodeURI(element.href) + '"]' + content + '[/iurl]';
+		},
+		html: function (token, attrs, content)
+		{
+			return '<a data-type="iurl" href="' + encodeURI(attrs.defaultattr || content) + '">' + content + '</a>';
 		}
 	}
 );
@@ -919,12 +959,17 @@ sceditor.formats.bbcode.set(
 
 			return '[font=' + font + ']' + content + '[/font]';
 		}
-}
+	}
 );
 
 sceditor.formats.bbcode.set(
 	'member', {
 		isInline: true,
+		tags: {
+			a: {
+				'data-mention': null
+			}
+		},
 		format: function (element, content) {
 			return '[member='+ $(element).attr('data-mention') +']'+ content.replace('@','') +'[/member]';
 		},
@@ -932,7 +977,7 @@ sceditor.formats.bbcode.set(
 			if (typeof attrs.defaultattr === "undefined" || attrs.defaultattr.length === 0)
 				attrs.defaultattr = content;
 
-			return '<a href="' + smf_scripturl +'?action=profile;u='+ attrs.defaultattr + '" class="mention" data-mention="'+ attrs.defaultattr + '">@'+ content.replace('@','') +'</a>';
+			return '<a href="' + smf_scripturl +'?action=profile;u='+ attrs.defaultattr + '" class="mention" data-type="mention" data-mention="'+ attrs.defaultattr + '">@'+ content.replace('@', '') +'</a>';
 		}
 	}
 );
@@ -987,5 +1032,41 @@ sceditor.formats.bbcode.set(
 				return content;
 		},
 		html: '<div class="videocontainer"><div><iframe frameborder="0" src="https://www.youtube-nocookie.com/embed/{0}?wmode=opaque" data-youtube-id="{0}" loading="lazy" allowfullscreen></iframe></div></div>'
+	}
+);
+
+sceditor.formats.bbcode.set(
+	'nobbc', {
+		tags: {
+			span: {
+				class: 'nobbc',
+			},
+			div: {
+				class: 'nobbc',
+			},
+		},
+		format: function (element, content) {
+			if (!content.includes('[nobbc]')) {
+				content = '[nobbc]' + content;
+			}
+
+			if (!content.includes('[/nobbc]')) {
+				content = content + '[/nobbc]';
+			}
+
+			return content;
+		},
+		html: function (token, attrs, content) {
+			let tag;
+
+			if (content.includes("\n")) {
+				tag = 'div';
+			} else {
+				tag = 'span';
+			}
+
+			return '<' + tag + ' class="nobbc">[nobbc]' + content + '[/nobbc]</' + tag + '>';
+		},
+		allowedChildren: ['#']
 	}
 );

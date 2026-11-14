@@ -1,5 +1,5 @@
 <?php
-// Version: 2.1 RC4; index
+// Version: 2.1.5; index
 
 global $forum_copyright, $webmaster_email, $scripturl, $context, $boardurl;
 
@@ -15,8 +15,8 @@ $txt['lang_recaptcha'] = 'en';
 
 // Ensure you remember to use uppercase for character set strings.
 $txt['lang_character_set'] = 'UTF-8';
-// Character set and right to left?
-$txt['lang_rtl'] = false;
+// Character set right to left?  0 = ltr; 1 = rtl
+$txt['lang_rtl'] = '0';
 // Number format.
 $txt['number_format'] = '1,234.00';
 
@@ -49,7 +49,7 @@ $txt['minutes_short'] = 'mins';
 $txt['hour_short'] = 'hr';
 // Short form of hours
 $txt['hours_short'] = 'hrs';
-// Descimal sign
+// Decimal sign
 $txt['decimal_sign'] = '.';
 
 $txt['admin'] = 'Admin';
@@ -76,7 +76,7 @@ $txt['on'] = 'on';
 $txt['remove'] = 'Remove';
 $txt['start_new_topic'] = 'Start new topic';
 
-$txt['login'] = 'Login';
+$txt['login'] = 'Log in';
 // Use numeric entities in the below string.
 $txt['username'] = 'Username';
 $txt['password'] = 'Password';
@@ -108,7 +108,7 @@ $txt['position'] = 'Position';
 $txt['view_profile_of_username'] = 'View the profile of %1$s';
 $txt['total'] = 'Total';
 $txt['website'] = 'Website';
-$txt['register'] = 'Sign Up';
+$txt['register'] = 'Sign up';
 $txt['warning_status'] = 'Warning status';
 $txt['user_warn_watch'] = 'User is on moderator watch list';
 $txt['user_warn_moderate'] = 'User posts join approval queue';
@@ -129,7 +129,7 @@ $txt['post'] = 'Post';
 $txt['error_occured'] = 'An error has occurred';
 $txt['at'] = 'at';
 $txt['by'] = 'by';
-$txt['logout'] = 'Logout';
+$txt['logout'] = 'Log out';
 $txt['started_by'] = 'Started by';
 $txt['topic_started_by'] = 'Started by <strong>%1$s</strong> in <em>%2$s</em>';
 $txt['replies'] = 'Replies';
@@ -152,6 +152,7 @@ $txt['watch_board'] = 'Watch this Board';
 $txt['unwatch_board'] = 'Stop watching Board';
 $txt['watch_topic'] = 'Watch this Topic';
 $txt['unwatch_topic'] = 'Stop watching Topic';
+$txt['watching_topic'] = 'Topic you are watching';
 $txt['watching_this_topic'] = 'You are watching this topic, and will receive notifications about it.';
 $txt['notify'] = 'Notify';
 $txt['unnotify'] = 'Unnotify';
@@ -229,7 +230,16 @@ $txt['modified_by'] = 'Edited by';
 $txt['recent_posts'] = 'Recent posts';
 
 $txt['location'] = 'Location';
+$txt['location_desc'] = 'Geographic location.';
 $txt['gender'] = 'Gender';
+$txt['gender_0'] = 'None';
+$txt['gender_1'] = 'Male';
+$txt['gender_2'] = 'Female';
+$txt['gender_desc'] = 'Your gender.';
+$txt['icq'] = 'ICQ';
+$txt['icq_desc'] = 'This is your ICQ number.';
+$txt['skype'] = 'Skype';
+$txt['skype_desc'] = 'Your Skype username';
 $txt['personal_text'] = 'Personal text';
 $txt['date_registered'] = 'Date registered';
 
@@ -243,13 +253,20 @@ $txt['female'] = 'Female';
 $txt['error_invalid_characters_username'] = 'Invalid character used in Username.';
 
 // argument(s): forum name, login URL, login JavaScript snippet
-$txt['welcome_guest'] = 'Welcome to <strong>%1$s</strong>. Please <a href="%2$s" onclick="%3$s">login</a>.';
+$txt['welcome_guest'] = 'Welcome to <strong>%1$s</strong>. Please <a href="%2$s" onclick="%3$s">log in</a>.';
 
 // argument(s): forum name, login URL, login JavaScript snippet, signup URL
-$txt['welcome_guest_register'] = 'Welcome to <strong>%1$s</strong>. Please <a href="%2$s" onclick="%3$s">login</a> or <a href="%4$s">sign up</a>.';
+$txt['welcome_guest_register'] = 'Welcome to <strong>%1$s</strong>. Please <a href="%2$s" onclick="%3$s">log in</a> or <a href="%4$s">sign up</a>.';
 
 // argument(s): $scripturl
 $txt['welcome_guest_activate'] = '<a href="%1$s?action=activate">Did you miss your activation email?</a>';
+
+// argument(s): $scripturl
+$txt['register_prompt'] = 'Don\'t have an account? <a href="%1$s?action=signup">Sign up</a>.';
+
+// argument(s): forum name
+$txt['welcome_to_forum'] = 'Welcome to <strong>%1$s</strong>.';
+
 // @todo the following to sprintf
 $txt['hello_member'] = 'Hey,';
 // Use numeric entities in the below string.
@@ -387,7 +404,7 @@ $txt['info_center_title'] = '%1$s - Info Center';
 $txt['watch'] = 'Watch';
 $txt['unwatch'] = 'Stop watching';
 
-$txt['check_all'] = 'Check all';
+$txt['check_all'] = 'Select all';
 
 // Use numeric entities in the below string.
 $txt['database_error'] = 'Database Error';
@@ -870,7 +887,7 @@ $txt['are_sure_mark_read'] = 'Are you sure you want to mark messages as read?';
 // Inline attachments messages.
 $txt['attachments_not_enable'] = 'Attachments are disabled';
 $txt['attachments_no_data_loaded'] = 'Not a valid attachment ID.';
-$txt['attachments_not_allowed_to_see'] = 'You cannot see attachments on this board.';
+$txt['attachments_not_allowed_to_see'] = 'You cannot view this attachment.';
 $txt['attachments_no_msg_associated'] = 'No message is associated with this attachment.';
 $txt['attachments_unapproved'] = 'Attachment is awaiting approval.';
 
@@ -915,7 +932,8 @@ $txt['unsubscribe_announcements_manual'] = 'To unsubscribe from forum newsletter
 // Mobile Actions
 $txt['mobile_action'] = 'User actions';
 $txt['mobile_moderation'] = 'Moderation';
-$txt['mobile_user_menu'] = 'Mobile Main Menu';
+$txt['mobile_user_menu'] = 'Main Menu';
+$txt['mobile_generic_menu'] = '%1$s Menu';
 
 // Formats for lists in a sentence (e.g. "Alice, Bob, and Charlie")
 // Examples:

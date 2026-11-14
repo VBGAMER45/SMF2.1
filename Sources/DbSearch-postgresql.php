@@ -7,10 +7,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -35,6 +35,7 @@ function db_search_init()
 	db_extend();
 
 	$smcFunc['db_support_ignore'] = true;
+	$smcFunc['db_supports_pcre'] = false;
 }
 
 /**
@@ -64,23 +65,29 @@ function smf_db_search_query($identifier, $db_string, $db_values = array(), $con
 	global $smcFunc;
 
 	$replacements = array(
-		'create_tmp_log_search_topics' => array(
-			'~ENGINE=MEMORY~i' => '',
-		),
-		'create_tmp_log_search_messages' => array(
-			'~ENGINE=MEMORY~i' => '',
-		),
 		'insert_into_log_messages_fulltext' => array(
-			'~LIKE~i' => 'iLIKE',
-			'~NOT\sLIKE~i' => '~NOT iLIKE',
-			'~NOT\sRLIKE~i' => '!~*',
-			'~RLIKE~i' => '~*',
+			'/NOT\sLIKE/' => 'NOT ILIKE',
+			'/\bLIKE\b/' => 'ILIKE',
+			'/NOT RLIKE/' => '!~*',
+			'/RLIKE/' => '~*',
 		),
 		'insert_log_search_results_subject' => array(
-			'~LIKE~i' => 'iLIKE',
-			'~NOT\sLIKE~i' => 'NOT iLIKE',
-			'~NOT\sRLIKE~i' => '!~*',
-			'~RLIKE~i' => '~*',
+			'/NOT\sLIKE/' => 'NOT ILIKE',
+			'/\bLIKE\b/' => 'ILIKE',
+			'/NOT RLIKE/' => '!~*',
+			'/RLIKE/' => '~*',
+		),
+		'insert_log_search_topics' => array(
+			'/NOT\sLIKE/' => 'NOT ILIKE',
+			'/\bLIKE\b/' => 'ILIKE',
+			'/NOT RLIKE/' => '!~*',
+			'/RLIKE/' => '~*',
+		),
+		'insert_log_search_results_no_index' => array(
+			'/NOT\sLIKE/' => 'NOT ILIKE',
+			'/\bLIKE\b/' => 'ILIKE',
+			'/NOT RLIKE/' => '!~*',
+			'/RLIKE/' => '~*',
 		),
 	);
 
@@ -103,7 +110,7 @@ function smf_db_search_query($identifier, $db_string, $db_values = array(), $con
 
 	//fix double quotes
 	if ($identifier == 'insert_into_log_messages_fulltext')
-		$db_values = str_replace('"', "'", $db_values);
+		$db_string = str_replace('"', "'", $db_string);
 
 	$return = $smcFunc['db_query']('', $db_string,
 		$db_values, $connection

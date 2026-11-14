@@ -4,10 +4,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2025 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.7
  */
 
 /**
@@ -919,14 +919,13 @@ function template_show_settings()
 												<li><label><input type="checkbox" name="', $config_var['name'], '[', $brd['id'], ']" value="1"', in_array($brd['id'], $config_var['value']) ? ' checked' : '', '> ', $brd['child_level'] > 0 ? str_repeat('&nbsp; &nbsp;', $brd['child_level']) : '', $brd['name'], '</label></li>';
 
 						echo '
-												<li>
-													<input type="checkbox" onclick="invertAll(this, this.form, \'' . $config_var['name'] . '[\');">
-													<span>', $txt['check_all'], '</span>
-												</li>
 											</ul>';
 						$first = false;
 					}
 					echo '
+											<hr />
+											<input type="checkbox" onclick="invertAll(this, this.form, \'' . $config_var['name'] . '[\');">
+											<span>', $txt['check_all'], '</span>
 										</fieldset>';
 				}
 				// Text area?
@@ -942,7 +941,7 @@ function template_show_settings()
 				{
 					echo '
 										<fieldset id="', $config_var['name'], '">
-											<legend>', $txt['enabled_bbc_select'], '</legend>
+											<legend>', $context['bbc_sections'][$config_var['name']]['title'], '</legend>
 											<ul>';
 
 					foreach ($context['bbc_sections'][$config_var['name']]['columns'] as $bbcColumn)
@@ -980,7 +979,7 @@ function template_show_settings()
 					$max = isset($config_var['max']) ? ' max="' . $config_var['max'] . '"' : '';
 
 					echo '
-										<input type="', $type, '"', $javascript, $disabled, ' name="', $config_var['name'], '" id="', $config_var['name'], '" value="', $config_var['value'], '"', ($config_var['size'] ? ' size="' . $config_var['size'] . '"' : ''), '', $min . $max . $step, '>';
+										<input type="', $type, '"', $javascript, $disabled, ' name="', $config_var['name'], '" id="', $config_var['name'], '" value="', $config_var['value'], '"', ($config_var['size'] ? ' size="' . $config_var['size'] . '"' : ''), '', $min . $max . $step, (!empty($config_var['multiple']) ? ' multiple="multiple"' : ''), '>';
 				}
 
 				echo isset($config_var['postinput']) ? '
@@ -1120,13 +1119,19 @@ function template_edit_profile_field()
 
 									<dl class="settings">
 										<dt>
-											<strong><label for="field_name">', $txt['custom_edit_name'], ':</label></strong>
+											<a id="field_name_help" href="', $scripturl, '?action=helpadmin;help=translatable_fields" onclick="return reqOverlayDiv(this.href);" class="help"><span class="main_icons help" title="', $txt['help'], '"></span></a>
+											<strong><label for="field_name">', $txt['custom_edit_name'], ':</label></strong><br>
+											<span class="smalltext">', $txt['custom_edit_name_desc'], '</span>
 										</dt>
 										<dd>
 											<input type="text" name="field_name" id="field_name" value="', $context['field']['name'], '" size="20" maxlength="40">
 										</dd>
 										<dt>
-											<strong><label for="field_desc">', $txt['custom_edit_desc'], ':</label></strong>
+											<a id="field_desc_help" href="', $scripturl, '?action=helpadmin;help=translatable_fields" onclick="return reqOverlayDiv(this.href);" class="help">
+												<span class="main_icons help" title="', $txt['help'], '"></span>
+											</a>
+											<strong><label for="field_desc">', $txt['custom_edit_desc'], ':</label></strong><br>
+											<span class="smalltext">', $txt['custom_edit_name_desc'], '</span>
 										</dt>
 										<dd>
 											<textarea name="field_desc" id="field_desc" rows="3" cols="40">', $context['field']['desc'], '</textarea>
@@ -1193,7 +1198,7 @@ function template_edit_profile_field()
 									<legend>', $txt['custom_edit_input'], '</legend>
 									<dl class="settings">
 										<dt>
-										<strong><label for="field_type">', $txt['custom_edit_picktype'], ':</label></strong>
+											<strong><label for="field_type">', $txt['custom_edit_picktype'], ':</label></strong>
 										</dt>
 										<dd>
 											<select name="field_type" id="field_type" onchange="updateInputBoxes();">';
@@ -1222,13 +1227,15 @@ function template_edit_profile_field()
 										<dt id="bbc_dt">
 											<strong><label for="bbc_dd">', $txt['custom_edit_bbc'], '</label></strong>
 										</dt>
-										<dd >
+										<dd>
 											<input type="checkbox" name="bbc" id="bbc_dd"', $context['field']['bbc'] ? ' checked' : '', '>
 										</dd>
 										<dt id="options_dt">
 											<a href="', $scripturl, '?action=helpadmin;help=customoptions" onclick="return reqOverlayDiv(this.href);" class="help"><span class="main_icons help" title="', $txt['help'], '"></span></a>
 											<strong><label for="options_dd">', $txt['custom_edit_options'], ':</label></strong><br>
 											<span class="smalltext">', $txt['custom_edit_options_desc'], '</span>
+											<br>
+											<span>', $txt['custom_edit_name_desc'], '</span>
 										</dt>
 										<dd id="options_dd">';
 
@@ -1269,7 +1276,7 @@ function template_edit_profile_field()
 											</span>
 										</dd>
 										<dt>
-											<strong><label for="private">', $txt['custom_edit_privacy'], ':</label></strong>
+											<strong><label for="private">', $txt['custom_edit_privacy'], ':</label></strong><br>
 											<span class="smalltext">', $txt['custom_edit_privacy_desc'], '</span>
 										</dt>
 										<dd>
@@ -1320,23 +1327,16 @@ function template_edit_profile_field()
  */
 function template_admin_search_results()
 {
-	global $context, $txt, $scripturl;
+	global $context, $txt;
 
 	echo '
 						<div id="section_header" class="cat_bar">
-							<form action="', $scripturl, '?action=admin;area=search" method="post" accept-charset="', $context['character_set'], '">
-								<h3 class="catbg">
-									<span id="quick_search" class="floatright">
-										<input type="search" name="search_term" value="', $context['search_term'], '">
-										<input type="hidden" name="search_type" value="', $context['search_type'], '">
-										<input type="submit" name="search_go" value="', $txt['admin_search_results_again'], '" class="button">
-									</span>
-									<span class="main_icons filter"></span>
-									<span id="quick_search_results">
-										', sprintf($txt['admin_search_results_desc'], $context['search_term']), '
-									</span>
-								</h3>
-							</form>
+							', template_admin_quick_search(), '
+							<h3 class="catbg">
+								<span id="quick_search_results">
+									', sprintf($txt['admin_search_results_desc'], $context['search_term']), '
+								</span>
+							</h3>
 						</div><!-- #section_header -->
 						<div class="windowbg generic_list_wrapper">';
 
@@ -1606,7 +1606,7 @@ function template_php_info()
 				echo '
 								<tr class="windowbg">
 									<td class="equal_table">', $key, '</td>
-									<td colspan="2">', str_replace(',', ', ', $setting), '</td>
+									<td colspan="2" class="word_break">', str_replace(',', ', ', $setting), '</td>
 								</tr>';
 			}
 		}
@@ -1653,20 +1653,20 @@ function template_clean_cache_button_below()
  */
 function template_admin_quick_search()
 {
-	global $context, $txt;
+	global $context, $txt, $scripturl;
 
 	if ($context['user']['is_admin'])
 		echo '
-								<span class="floatright admin_search">
+								<form action="' . $scripturl . '?action=admin;area=search" method="post" accept-charset="' . $context['character_set'] . '" class="admin_search">
 									<span class="main_icons filter centericon"></span>
-									<input type="search" name="search_term" placeholder="', $txt['admin_search'], '">
+									<input type="search" name="search_term" placeholder="', $txt['admin_search'], '"', isset($context['search_term']) ? ' value="' . $context['search_term'] . '"' : '','>
 									<select name="search_type">
 										<option value="internal"', (empty($context['admin_preferences']['sb']) || $context['admin_preferences']['sb'] == 'internal' ? ' selected' : ''), '>', $txt['admin_search_type_internal'], '</option>
 										<option value="member"', (!empty($context['admin_preferences']['sb']) && $context['admin_preferences']['sb'] == 'member' ? ' selected' : ''), '>', $txt['admin_search_type_member'], '</option>
 										<option value="online"', (!empty($context['admin_preferences']['sb']) && $context['admin_preferences']['sb'] == 'online' ? ' selected' : ''), '>', $txt['admin_search_type_online'], '</option>
 									</select>
 									<input type="submit" name="search_go" id="search_go" value="', $txt['admin_search_go'], '" class="button">
-								</span>';
+								</form>';
 }
 
 ?>

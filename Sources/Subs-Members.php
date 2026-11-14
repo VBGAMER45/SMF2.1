@@ -7,10 +7,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -74,7 +74,7 @@ function deleteMembers($users, $check_not_admin = false)
 
 	// Get their names for logging purposes.
 	$request = $smcFunc['db_query']('', '
-		SELECT id_member, member_name, CASE WHEN id_group = {int:admin_group} OR FIND_IN_SET({int:admin_group}, additional_groups) != 0 THEN 1 ELSE 0 END AS is_admin
+		SELECT id_member, member_name, email_address, CASE WHEN id_group = {int:admin_group} OR FIND_IN_SET({int:admin_group}, additional_groups) != 0 THEN 1 ELSE 0 END AS is_admin
 		FROM {db_prefix}members
 		WHERE id_member IN ({array_int:user_list})
 		LIMIT {int:limit}',
@@ -86,11 +86,13 @@ function deleteMembers($users, $check_not_admin = false)
 	);
 	$admins = array();
 	$user_log_details = array();
+	$emails = array();
 	while ($row = $smcFunc['db_fetch_assoc']($request))
 	{
 		if ($row['is_admin'])
 			$admins[] = $row['id_member'];
 		$user_log_details[$row['id_member']] = array($row['id_member'], $row['member_name']);
+		$emails[] = $row['email_address'];
 	}
 	$smcFunc['db_free_result']($request);
 
@@ -192,6 +194,26 @@ function deleteMembers($users, $check_not_admin = false)
 
 	$smcFunc['db_query']('', '
 		UPDATE {db_prefix}log_errors
+		SET id_member = {int:guest_id}
+		WHERE id_member IN ({array_int:users})',
+		array(
+			'guest_id' => 0,
+			'users' => $users,
+		)
+	);
+
+	$smcFunc['db_query']('', '
+		UPDATE {db_prefix}log_reported
+		SET id_member = {int:guest_id}
+		WHERE id_member IN ({array_int:users})',
+		array(
+			'guest_id' => 0,
+			'users' => $users,
+		)
+	);
+
+	$smcFunc['db_query']('', '
+		UPDATE {db_prefix}log_reported_comments
 		SET id_member = {int:guest_id}
 		WHERE id_member IN ({array_int:users})',
 		array(
@@ -305,6 +327,15 @@ function deleteMembers($users, $check_not_admin = false)
 		)
 	);
 
+	// Remove any emails we may have queued to send.
+	$smcFunc['db_query']('', '
+		DELETE FROM {db_prefix}mail_queue
+		WHERE recipient IN ({array_string:emails})',
+		array(
+			'emails' => $emails,
+		)
+	);
+
 	// Make their votes appear as guest votes - at least it keeps the totals right.
 	// @todo Consider adding back in cookie protection.
 	$smcFunc['db_query']('', '
@@ -334,6 +365,15 @@ function deleteMembers($users, $check_not_admin = false)
 	// They no longer exist, so we don't know who it was sent to.
 	$smcFunc['db_query']('', '
 		DELETE FROM {db_prefix}pm_recipients
+		WHERE id_member IN ({array_int:users})',
+		array(
+			'users' => $users,
+		)
+	);
+
+	// They no longer exist, so you can't have any rules.
+	$smcFunc['db_query']('', '
+		DELETE FROM {db_prefix}pm_rules
 		WHERE id_member IN ({array_int:users})',
 		array(
 			'users' => $users,
@@ -372,6 +412,40 @@ function deleteMembers($users, $check_not_admin = false)
 	// Remove individual theme settings.
 	$smcFunc['db_query']('', '
 		DELETE FROM {db_prefix}themes
+		WHERE id_member IN ({array_int:users})',
+		array(
+			'users' => $users,
+		)
+	);
+
+	$smcFunc['db_query']('', '
+		DELETE FROM {db_prefix}member_logins
+		WHERE id_member IN ({array_int:users})',
+		array(
+			'users' => $users,
+		)
+	);
+
+	$smcFunc['db_query']('', '
+		UPDATE {db_prefix}user_alerts
+		SET id_member = {int:guest_id}
+		WHERE id_member IN ({array_int:users})',
+		array(
+			'guest_id' => 0,
+			'users' => $users,
+		)
+	);
+	$smcFunc['db_query']('', '
+		UPDATE {db_prefix}user_alerts
+		SET id_member_started = {int:guest_id}
+		WHERE id_member_started IN ({array_int:users})',
+		array(
+			'guest_id' => 0,
+			'users' => $users,
+		)
+	);
+	$smcFunc['db_query']('', '
+		DELETE FROM {db_prefix}user_alerts_prefs
 		WHERE id_member IN ({array_int:users})',
 		array(
 			'users' => $users,
@@ -464,13 +538,13 @@ function registerMember(&$regOptions, $return_errors = false)
 	}
 
 	// Spaces and other odd characters are evil...
-	$regOptions['username'] = trim(preg_replace('~[\t\n\r \x0B\0' . ($context['utf8'] ? '\x{A0}\x{AD}\x{2000}-\x{200F}\x{201F}\x{202F}\x{3000}\x{FEFF}' : '\x00-\x08\x0B\x0C\x0E-\x19\xA0') . ']+~' . ($context['utf8'] ? 'u' : ''), ' ', $regOptions['username']));
+	$regOptions['username'] = trim(normalize_spaces(sanitize_chars($regOptions['username'], 1, ' '), true, true, array('no_breaks' => true, 'replace_tabs' => true, 'collapse_hspace' => true)));
 
 	// Convert character encoding for non-utf8mb4 database
 	$regOptions['username'] = $smcFunc['htmlspecialchars']($regOptions['username']);
 
 	// @todo Separate the sprintf?
-	if (empty($regOptions['email']) || !filter_var($regOptions['email'], FILTER_VALIDATE_EMAIL) || strlen($regOptions['email']) > 255)
+	if (empty($regOptions['email']) || !filter_var($regOptions['email'], FILTER_VALIDATE_EMAIL) || filter_var($regOptions['email'], FILTER_SANITIZE_EMAIL) !== $regOptions['email'] || strlen($regOptions['email']) > 255)
 		$reg_errors[] = array('lang', 'profile_error_bad_email');
 
 	$username_validation_errors = validateUsername(0, $regOptions['username'], true, !empty($regOptions['check_reserved_name']));
@@ -522,10 +596,11 @@ function registerMember(&$regOptions, $return_errors = false)
 	$request = $smcFunc['db_query']('', '
 		SELECT id_member
 		FROM {db_prefix}members
-		WHERE email_address = {string:email_address}
-			OR email_address = {string:username}
+		WHERE {raw:email_address_field} = {string:email_address}
+			OR {raw:email_address_field} = {string:username}
 		LIMIT 1',
 		array(
+			'email_address_field' => $smcFunc['db_case_sensitive'] ? 'LOWER(email_address)' : 'email_address',
 			'email_address' => $regOptions['email'],
 			'username' => $regOptions['username'],
 		)
@@ -549,7 +624,7 @@ function registerMember(&$regOptions, $return_errors = false)
 			3 = sprintf data if necessary. */
 		if ($error[0] == 'lang')
 			loadLanguage('Errors');
-		$message = $error[0] == 'lang' ? (empty($error[3]) ? $txt[$error[1]] : vsprintf($txt[$error[1]], $error[3])) : $error[1];
+		$message = $error[0] == 'lang' ? (empty($error[3]) ? $txt[$error[1]] : vsprintf($txt[$error[1]], (array) $error[3])) : $error[1];
 
 		// What to do, what to do, what to do.
 		if ($return_errors)
@@ -964,10 +1039,10 @@ function isReservedName($name, $current_id_member = 0, $is_name = true, $fatal =
 	return $is_reserved;
 }
 
-// Get a list of groups that have a given permission (on a given board).
 /**
- * Retrieves a list of membergroups that are allowed to do the given
- * permission. (on the given board)
+ * Retrieves a list of membergroups that have the given permission, either on
+ * a given board or in general.
+ *
  * If board_id is not null, a board permission is assumed.
  * The function takes different permission settings into account.
  *
@@ -996,17 +1071,25 @@ function groupsAllowedTo($permission, $board_id = null)
 				'permission' => $permission,
 			)
 		);
+
 		while ($row = $smcFunc['db_fetch_assoc']($request))
+		{
 			$member_groups[$row['add_deny'] === '1' ? 'allowed' : 'denied'][] = $row['id_group'];
+		}
+
 		$smcFunc['db_free_result']($request);
 	}
 
 	// Otherwise it's time to look at the board.
 	else
 	{
+		$board_id = (int) $board_id;
+
 		// First get the profile of the given board.
 		if (isset($board_info['id']) && $board_info['id'] == $board_id)
+		{
 			$profile_id = $board_info['profile'];
+		}
 		elseif ($board_id !== 0)
 		{
 			$request = $smcFunc['db_query']('', '
@@ -1018,9 +1101,14 @@ function groupsAllowedTo($permission, $board_id = null)
 					'id_board' => $board_id,
 				)
 			);
+
 			if ($smcFunc['db_num_rows']($request) == 0)
+			{
 				fatal_lang_error('no_board');
+			}
+
 			list ($profile_id) = $smcFunc['db_fetch_row']($request);
+
 			$smcFunc['db_free_result']($request);
 		}
 		else
@@ -1036,8 +1124,12 @@ function groupsAllowedTo($permission, $board_id = null)
 				'permission' => $permission,
 			)
 		);
+
 		while ($row = $smcFunc['db_fetch_assoc']($request))
+		{
 			$member_groups[$row['add_deny'] === '1' ? 'allowed' : 'denied'][] = $row['id_group'];
+		}
+
 		$smcFunc['db_free_result']($request);
 
 		$moderator_groups = array();
@@ -1083,6 +1175,9 @@ function groupsAllowedTo($permission, $board_id = null)
 			}
 		}
 	}
+
+	// Maybe a mod needs to tweak the list of allowed groups on the fly?
+	call_integration_hook('integrate_groups_allowed_to', array(&$member_groups, $permission, $board_id));
 
 	// Denied is never allowed.
 	$member_groups['allowed'] = array_diff($member_groups['allowed'], $member_groups['denied']);
@@ -1386,23 +1481,14 @@ function list_getNumMembers($where, $where_params = array())
 {
 	global $smcFunc, $modSettings;
 
-	// We know how many members there are in total.
-	if (empty($where) || $where == '1=1')
-		$num_members = $modSettings['totalMembers'];
-
-	// The database knows the amount when there are extra conditions.
-	else
-	{
-		$request = $smcFunc['db_query']('', '
-			SELECT COUNT(*)
-			FROM {db_prefix}members AS mem
-			WHERE ' . $where,
-			array_merge($where_params, array(
-			))
-		);
-		list ($num_members) = $smcFunc['db_fetch_row']($request);
-		$smcFunc['db_free_result']($request);
-	}
+	$request = $smcFunc['db_query']('', '
+		SELECT COUNT(*)
+		FROM {db_prefix}members AS mem
+		WHERE ' . $where,
+		$where_params
+	);
+	list ($num_members) = $smcFunc['db_fetch_row']($request);
+	$smcFunc['db_free_result']($request);
 
 	return $num_members;
 }

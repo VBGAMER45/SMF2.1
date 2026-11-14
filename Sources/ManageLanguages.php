@@ -7,10 +7,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2025 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.5
  */
 
 if (!defined('SMF'))
@@ -43,10 +43,6 @@ function ManageLanguages()
 		'editlang' => 'ModifyLanguage',
 	);
 
-	// By default we're managing languages.
-	$_REQUEST['sa'] = isset($_REQUEST['sa']) && isset($subActions[$_REQUEST['sa']]) ? $_REQUEST['sa'] : 'edit';
-	$context['sub_action'] = $_REQUEST['sa'];
-
 	// Load up all the tabs...
 	$context[$context['admin_menu_name']]['tab_data'] = array(
 		'title' => $txt['language_configuration'],
@@ -54,6 +50,10 @@ function ManageLanguages()
 	);
 
 	call_integration_hook('integrate_manage_languages', array(&$subActions));
+
+	// By default we're managing languages.
+	$_REQUEST['sa'] = isset($_REQUEST['sa']) && isset($subActions[$_REQUEST['sa']]) ? $_REQUEST['sa'] : 'edit';
+	$context['sub_action'] = $_REQUEST['sa'];
 
 	// Call the right function for this sub-action.
 	call_helper($subActions[$_REQUEST['sa']]);
@@ -269,7 +269,7 @@ function DownloadLanguage()
 		$extension = $pathinfo['extension'];
 
 		// Don't do anything with files we don't understand.
-		if (!in_array($extension, array('php', 'jpg', 'gif', 'jpeg', 'png', 'txt')))
+		if (!in_array($extension, array('php', 'jpg', 'gif', 'jpeg', 'png', 'txt', 'webp')))
 			continue;
 
 		// Basic data.
@@ -991,7 +991,7 @@ function ModifyLanguage()
 	}
 
 	// Saving primary settings?
-	$primary_settings = array('native_name' => 'string', 'lang_character_set' => 'string', 'lang_locale' => 'string', 'lang_rtl' => 'bool', 'lang_dictionary' => 'string', 'lang_recaptcha' => 'string');
+	$primary_settings = array('native_name' => 'string', 'lang_character_set' => 'string', 'lang_locale' => 'string', 'lang_rtl' => 'string', 'lang_dictionary' => 'string', 'lang_recaptcha' => 'string');
 	$madeSave = false;
 	if (!empty($_POST['save_main']) && !$current_file)
 	{
@@ -1659,6 +1659,8 @@ function cleanLangString($string, $to_display = true)
 	}
 	else
 	{
+		$string = $smcFunc['normalize']($string);
+
 		// Keep track of what we're doing...
 		$in_string = 0;
 		// This is for deciding whether to HTML a quote.

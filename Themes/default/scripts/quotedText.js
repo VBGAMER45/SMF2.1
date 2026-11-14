@@ -21,42 +21,28 @@ function getClosest(el, divID)
 	return null;
 }
 
-function getSelectedText(divID)
-{
-	if (typeof divID == 'undefined' || divID == false)
-		return false;
-
-	var text = '',
-	selection,
-	found = 0,
-	container = document.createElement("div");
-
-	if (window.getSelection)
-	{
-		selection = window.getSelection();
-		text = selection.toString();
-	}
-	else if (document.selection && document.selection.type != 'Control')
-	{
-		selection = document.selection.createRange();
-		text = selection.text;
-	}
-
-	// Need to be sure the selected text does belong to the right div.
+function getSelectedText(node) {
+	var selection = window.getSelection();
+	// Need to be sure the selected text includes the right div.
 	for (var i = 0; i < selection.rangeCount; i++) {
-			s = getClosest(selection.getRangeAt(i).startContainer, divID);
-			e = getClosest(selection.getRangeAt(i).endContainer, divID);
+		const range = selection.getRangeAt(i);
 
-			if (s !== null && e !== null)
-			{
-				found = 1;
-				container.appendChild(selection.getRangeAt(i).cloneContents());
-				text = container.innerHTML;
-				break;
+		if (range.intersectsNode(node)) {
+			const
+				frag = range.cloneContents(),
+				s = getClosest(range.startContainer, node.id),
+				e = getClosest(range.endContainer, node.id);
+
+			if (s && e) {
+				const container = document.createElement("div");
+				container.appendChild(range.cloneContents());
+				return container.innerHTML;
+			} else {
+				const el = frag.getElementById(node.id);
+				return el ? el.innerHTML : undefined;
 			}
 		}
-
-	return found === 1 ? text : false;
+	}
 }
 
 function quotedTextClick(oOptions)
@@ -68,8 +54,14 @@ function quotedTextClick(oOptions)
 
 		// Do a call to make sure this is a valid message.
 		$.ajax({
-			url: smf_prepareScriptUrl(smf_scripturl) + 'action=quotefast;quote=' + oOptions.msgID + ';xml;pb='+ oEditorID + ';mode=' + (oEditorObject.bRichTextEnabled ? 1 : 0),
+			url: smf_prepareScriptUrl(smf_scripturl) + 'action=quotefast;quote=' + oOptions.msgID + ';xml;pb='+ oEditorID + ';mode=' + (oEditorObject && oEditorObject.bRichTextEnabled ? 1 : 0),
 			type: 'GET',
+			headers: {
+				"X-SMF-AJAX": 1
+			},
+			xhrFields: {
+				withCredentials: typeof allow_xhjr_credentials !== "undefined" ? allow_xhjr_credentials : false
+			},
 			dataType: 'xml',
 			beforeSend: function () {
 				ajax_indicator(true);
@@ -78,6 +70,9 @@ function quotedTextClick(oOptions)
 				ajax_indicator(false);
 			},
 			success: function (data, textStatus, xhr) {
+				// Convert all smileys from images back to smiley code
+				oOptions.text = oOptions.text.replaceAll(/<img src=".*?" alt="(.*?)" title=".*?" class="smiley">/, '$1');
+
 				// Search the xml data to get the quote tag.
 				text = $(data).find('quote').text();
 
@@ -120,7 +115,8 @@ $(function() {
 		};
 
 		// Get any selected text.
-		oSelected.text = getSelectedText(oSelected.divID);
+		const node = this;
+		oSelected.text = getSelectedText(this);
 
 		// Do we have some selected text?
 		if (typeof oSelected.text == 'undefined' || oSelected.text == false)
@@ -128,6 +124,9 @@ $(function() {
 
 		// Show the "quote this" button.
 		$('#quoteSelected_' + oSelected.msgID).show();
+
+		// Remove any previous selection
+		$(document).off('click', '#quoteSelected_' + oSelected.msgID + ' a');
 
 		$(document).one('click', '#quoteSelected_' + oSelected.msgID + ' a', function(e) {
 			e.preventDefault();
@@ -138,7 +137,7 @@ $(function() {
 		$(document).on('click.ondeselecttext' + oSelected.msgID, function() {
 			// Delay the check a bit to allow the deselection to happen.
 			setTimeout(function() {
-				selectedText = getSelectedText(oSelected.divID);
+				selectedText = getSelectedText(node);
 
 				if (typeof selectedText != 'undefined' && selectedText != false)
 					return;

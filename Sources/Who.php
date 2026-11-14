@@ -8,10 +8,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -37,6 +37,9 @@ function Who()
 	// You can't do anything if this is off.
 	if (empty($modSettings['who_enabled']))
 		fatal_lang_error('who_off', false);
+
+	// Discourage robots from indexing this page.
+	$context['robot_no_index'] = true;
 
 	// Load the 'Who' template.
 	loadTemplate('Who');
@@ -156,7 +159,7 @@ function Who()
 	while ($row = $smcFunc['db_fetch_assoc']($request))
 	{
 		$actions = $smcFunc['json_decode']($row['url'], true);
-		if ($actions === false)
+		if ($actions === array())
 			continue;
 
 		// Send the information to the template.
@@ -165,7 +168,7 @@ function Who()
 			'ip' => allowedTo('moderate_forum') ? inet_dtop($row['ip']) : '',
 			// It is *going* to be today or yesterday, so why keep that information in there?
 			'time' => strtr(timeformat($row['log_time']), array($txt['today'] => '', $txt['yesterday'] => '')),
-			'timestamp' => forum_time(true, $row['log_time']),
+			'timestamp' => $row['log_time'],
 			'query' => $actions,
 			'is_hidden' => $row['show_online'] == 0,
 			'id_spider' => $row['id_spider'],
@@ -257,7 +260,7 @@ function Who()
  *
  * @param mixed $urls a single url (string) or an array of arrays, each inner array being (JSON-encoded request data, id_member)
  * @param string|bool $preferred_prefix = false
- * @return array, an array of descriptions if you passed an array, otherwise the string describing their current location.
+ * @return array an array of descriptions if you passed an array, otherwise the string describing their current location.
  */
 function determineActions($urls, $preferred_prefix = false)
 {
@@ -312,6 +315,9 @@ function determineActions($urls, $preferred_prefix = false)
 		'viewerrorlog' => array('admin_forum'),
 		'viewmembers' => array('moderate_forum'),
 	);
+	call_integration_hook('integrate_who_allowed', array(&$allowedActions));
+
+	// This hook is deprecated because it is missing the correct prefix.
 	call_integration_hook('who_allowed', array(&$allowedActions));
 
 	if (!is_array($urls))
@@ -329,7 +335,7 @@ function determineActions($urls, $preferred_prefix = false)
 	{
 		// Get the request parameters..
 		$actions = $smcFunc['json_decode']($url[0], true);
-		if ($actions === false)
+		if ($actions === array())
 			continue;
 
 		// If it's the admin or moderation center, and there is an area set, use that instead.
@@ -444,9 +450,7 @@ function determineActions($urls, $preferred_prefix = false)
 			loadLanguage('Errors');
 
 			if (isset($txt[$actions['error']]))
-				$error_message = str_replace('"', '&quot;', empty($actions['error_params']) ? $txt[$actions['error']] : vsprintf($txt[$actions['error']], $actions['error_params']));
-			elseif ($actions['error'] == 'guest_login')
-				$error_message = str_replace('"', '&quot;', $txt['who_guest_login']);
+				$error_message = str_replace('"', '&quot;', empty($actions['error_params']) ? $txt[$actions['error']] : vsprintf($txt[$actions['error']], (array) $actions['error_params']));
 			else
 				$error_message = str_replace('"', '&quot;', $actions['error']);
 
@@ -557,6 +561,9 @@ function determineActions($urls, $preferred_prefix = false)
 		$smcFunc['db_free_result']($result);
 	}
 
+	call_integration_hook('integrate_whos_online_after', array(&$url_list, &$data));
+
+	// This hook is deprecated because it is missing the correct prefix.
 	call_integration_hook('whos_online_after', array(&$urls, &$data));
 
 	if (!is_array($urls))
@@ -577,6 +584,9 @@ function Credits($in_admin = false)
 	// Don't blink. Don't even blink. Blink and you're dead.
 	loadLanguage('Who');
 
+	// Discourage robots from indexing this page.
+	$context['robot_no_index'] = true;
+
 	if ($in_admin)
 	{
 		$context[$context['admin_menu_name']]['tab_data'] = array(
@@ -594,8 +604,11 @@ function Credits($in_admin = false)
 				array(
 					'title' => $txt['credits_groups_pm'],
 					'members' => array(
-						'Michele "Illori" Davis',
+						'Aleksi "Lex" Kilpinen',
 						// Former Project Managers
+						'Michele "Illori" Davis',
+						'Jessica "Suki" González',
+						'Will "Kindred" Wagner',
 					),
 				),
 				array(
@@ -604,10 +617,7 @@ function Credits($in_admin = false)
 						// Lead Developer
 						'Jon "Sesquipedalian" Stovell',
 						// Developers
-						'Jessica "Suki" González',
 						'John "live627" Rayes',
-						'Oscar "Ozp" Rydhé',
-						'Shawn Bulen',
 
 						// Former Developers
 						'Aaron van Geffen',
@@ -617,6 +627,7 @@ function Credits($in_admin = false)
 						'Colin Schoen',
 						'emanuele',
 						'Hendrik Jan "Compuart" Visser',
+						'Jessica "Suki" González',
 						'Juan "JayBachatero" Hernandez',
 						'Karl "RegularExpression" Benson',
 						'Matthew "Labradoodle-360" Kerle',
@@ -624,8 +635,10 @@ function Credits($in_admin = false)
 						'Michael "Oldiesmann" Eshom',
 						'Michael "Thantos" Miller',
 						'Norv',
+						'Oscar "Ozp" Rydhé',
 						'Peter "Arantor" Spicer',
 						'Selman "[SiNaN]" Eser',
+						'Shawn Bulen',
 						'Shitiz "Dragooon" Garg',
 						// 'Spuds', // Doesn't want to be listed here
 						// 'Steven "Fustrate" Hoffman',
@@ -638,15 +651,15 @@ function Credits($in_admin = false)
 					'title' => $txt['credits_groups_support'],
 					'members' => array(
 						// Lead Support Specialist
-						'Aleksi "Lex" Kilpinen',
-						// Support Specialists
 						'Will "Kindred" Wagner',
+						// Support Specialists
+						'Doug Heffernan',
 						'lurkalot',
 
 						// Former Support Specialists
+						'Aleksi "Lex" Kilpinen',
 						'br360',
 						'GigaWatt',
-						'Steve',
 						'ziycon',
 						'Adam Tallon',
 						'Bigguy',
@@ -665,6 +678,8 @@ function Credits($in_admin = false)
 						'Michael Colin Blaber',
 						'Old Fossil',
 						'S-Ace',
+						'shadav',
+						'Steve',
 						'Storman™',
 						'Wade "sησω" Poulsen',
 						'xenovanis',
@@ -674,19 +689,21 @@ function Credits($in_admin = false)
 					'title' => $txt['credits_groups_customize'],
 					'members' => array(
 						// Lead Customizer
-						'Gary M. Gadsdon',
-						// Customizers
 						'Diego Andrés',
+						// Customizers
+						'GL700Wing',
+						'Johnnie "TwitchisMental" Ballew',
 						'Jonathan "vbgamer45" Valentin',
-						'Mick.',
 
 						// Former Customizers
 						'Sami "SychO" Mazouz',
 						'Brannon "B" Hall',
+						'Gary M. Gadsdon',
 						'Jack "akabugeyes" Thorsen',
 						'Jason "JBlaze" Clemons',
 						'Joey "Tyrsson" Smith',
 						'Kays',
+						'Michael "Mick." Gomez',
 						'NanoSector',
 						'Ricky.',
 						'Russell "NEND" Najar',
@@ -697,8 +714,9 @@ function Credits($in_admin = false)
 					'title' => $txt['credits_groups_docs'],
 					'members' => array(
 						// Doc Coordinator
-						'Irisado',
+						'Michele "Illori" Davis',
 						// Doc Writers
+						'Irisado',
 
 						// Former Doc Writers
 						'AngelinaBelle',
@@ -711,11 +729,11 @@ function Credits($in_admin = false)
 					'title' => $txt['credits_groups_internationalizers'],
 					'members' => array(
 						// Lead Localizer
-						'Francisco "d3vcho" Domínguez',
-						// Localizers
 						'Nikola "Dzonny" Novaković',
+						// Localizers
 						'm4z',
 						// Former Localizers
+						'Francisco "d3vcho" Domínguez',
 						'Robert Monden',
 						'Relyana',
 					),
@@ -753,6 +771,9 @@ function Credits($in_admin = false)
 	);
 
 	// Give the translators some credit for their hard work.
+	if (!is_array($txt['translation_credits']))
+		$txt['translation_credits'] = array_filter(array_map('trim', explode(',', $txt['translation_credits'])));
+
 	if (!empty($txt['translation_credits']))
 		$context['credits'][] = array(
 			'title' => $txt['credits_groups_translation'],
@@ -812,6 +833,7 @@ function Credits($in_admin = false)
 					'K@',
 					'metallica48423',
 					'Paul_Pauline',
+					'Rock Lee',
 				),
 			),
 		),

@@ -9,10 +9,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -137,7 +137,7 @@ function loadProfileFields($force_reload = false)
 		),
 		'date_registered' => array(
 			'type' => 'date',
-			'value' => empty($cur_profile['date_registered']) ? $txt['not_applicable'] : strftime('%Y-%m-%d', $cur_profile['date_registered'] + ($user_info['time_offset'] + $modSettings['time_offset']) * 3600),
+			'value' => empty($cur_profile['date_registered']) ? $txt['not_applicable'] : smf_strftime('%Y-%m-%d', $cur_profile['date_registered']),
 			'label' => $txt['date_registered'],
 			'log_change' => true,
 			'permission' => 'moderate_forum',
@@ -147,12 +147,15 @@ function loadProfileFields($force_reload = false)
 				if (($value = strtotime($value)) === false)
 				{
 					$value = $cur_profile['date_registered'];
-					return $txt['invalid_registration'] . ' ' . strftime('%d %b %Y ' . (strpos($user_info['time_format'], '%H') !== false ? '%I:%M:%S %p' : '%H:%M:%S'), forum_time(false));
+					return $txt['invalid_registration'] . ' ' . smf_strftime('%d %b %Y ' . (strpos($user_info['time_format'], '%H') !== false ? '%I:%M:%S %p' : '%H:%M:%S'), time());
 				}
 
 				// As long as it doesn't equal "N/A"...
-				elseif ($value != $txt['not_applicable'] && $value != strtotime(strftime('%Y-%m-%d', $cur_profile['date_registered'] + ($user_info['time_offset'] + $modSettings['time_offset']) * 3600)))
-					$value = $value - ($user_info['time_offset'] + $modSettings['time_offset']) * 3600;
+				elseif ($value != $txt['not_applicable'] && $value != strtotime(smf_strftime('%Y-%m-%d', $cur_profile['date_registered'])))
+				{
+					$diff = $cur_profile['date_registered'] - strtotime(smf_strftime('%Y-%m-%d', $cur_profile['date_registered']));
+					$value = $value + $diff;
+				}
 
 				else
 					$value = $cur_profile['date_registered'];
@@ -292,7 +295,7 @@ function loadProfileFields($force_reload = false)
 						resetPassword($context['id_member'], $value);
 					elseif ($value !== null)
 					{
-						validateUsername($context['id_member'], trim(preg_replace('~[\t\n\r \x0B\0' . ($context['utf8'] ? '\x{A0}\x{AD}\x{2000}-\x{200F}\x{201F}\x{202F}\x{3000}\x{FEFF}' : '\x00-\x08\x0B\x0C\x0E-\x19\xA0') . ']+~' . ($context['utf8'] ? 'u' : ''), ' ', $value)));
+						validateUsername($context['id_member'], trim(normalize_spaces(sanitize_chars($value, 1, ' '), true, true, array('no_breaks' => true, 'replace_tabs' => true, 'collapse_hspace' => true))));
 						updateMemberData($context['id_member'], array('member_name' => $value));
 
 						// Call this here so any integrated systems will know about the name change (resetPassword() takes care of this if we're letting SMF generate the password)
@@ -409,7 +412,7 @@ function loadProfileFields($force_reload = false)
 			'enabled' => allowedTo('profile_displayed_name_own') || allowedTo('profile_displayed_name_any') || allowedTo('moderate_forum'),
 			'input_validate' => function(&$value) use ($context, $smcFunc, $sourcedir, $cur_profile)
 			{
-				$value = trim(preg_replace('~[\t\n\r \x0B\0' . ($context['utf8'] ? '\x{A0}\x{AD}\x{2000}-\x{200F}\x{201F}\x{202F}\x{3000}\x{FEFF}' : '\x00-\x08\x0B\x0C\x0E-\x19\xA0') . ']+~' . ($context['utf8'] ? 'u' : ''), ' ', $value));
+				$value = trim(normalize_spaces(sanitize_chars($value, 1, ' '), true, true, array('no_breaks' => true, 'replace_tabs' => true, 'collapse_hspace' => true)));
 
 				if (trim($value) == '')
 					return 'no_name';
@@ -488,7 +491,7 @@ function loadProfileFields($force_reload = false)
 				$no_smiley_sets = array_diff(explode(',', $modSettings['smiley_sets_known']), array_keys($filenames));
 				foreach ($no_smiley_sets as $set)
 				{
-					$allowedTypes = array('gif', 'png', 'jpg', 'jpeg', 'tiff', 'svg');
+					$allowedTypes = array('gif', 'png', 'jpg', 'jpeg', 'tiff', 'svg', 'webp');
 					$images = glob(implode('/', array($modSettings['smileys_dir'], $set, '*.{' . (implode(',', $allowedTypes) . '}'))), GLOB_BRACE);
 
 					// Just use some image or other
@@ -559,9 +562,6 @@ function loadProfileFields($force_reload = false)
 			{
 				loadLanguage('Settings');
 
-				$context['allow_no_censored'] = false;
-				if ($user_info['is_admin'] || $context['user']['is_owner'])
-					$context['allow_no_censored'] = !empty($modSettings['allow_no_censored']);
 
 				return true;
 			},
@@ -594,9 +594,9 @@ function loadProfileFields($force_reload = false)
 				);
 
 				$context['member']['time_format'] = $cur_profile['time_format'];
-				$context['current_forum_time'] = timeformat(time() - $user_info['time_offset'] * 3600, false);
-				$context['current_forum_time_js'] = strftime('%Y,' . ((int) strftime('%m', time() + $modSettings['time_offset'] * 3600) - 1) . ',%d,%H,%M,%S', time() + $modSettings['time_offset'] * 3600);
-				$context['current_forum_time_hour'] = (int) strftime('%H', forum_time(false));
+				$context['current_forum_time'] = timeformat(time(), false, 'forum');
+				$context['current_forum_time_js'] = smf_strftime('%Y,' . ((int) smf_strftime('%m', time()) - 1) . ',%d,%H,%M,%S', time());
+				$context['current_forum_time_hour'] = (int) smf_strftime('%H', time());
 				return true;
 			},
 		),
@@ -639,6 +639,13 @@ function loadProfileFields($force_reload = false)
 			'size' => 50,
 			'permission' => 'profile_website',
 			'link_with' => 'website',
+			'input_validate' => function(&$value) use ($smcFunc)
+			{
+				if (mb_strlen($value) > 250)
+					return 'website_title_too_long';
+
+				return true;
+			},
 		),
 		'website_url' => array(
 			'type' => 'url',
@@ -653,7 +660,7 @@ function loadProfileFields($force_reload = false)
 					$value = 'http://' . $value;
 				if (strlen($value) < 8 || (substr($value, 0, 7) !== 'http://' && substr($value, 0, 8) !== 'https://'))
 					$value = '';
-				$value = (string) validate_iri(sanitize_iri($value));
+				$value = (string) validate_iri(normalize_iri($value));
 				return true;
 			},
 			'link_with' => 'website',
@@ -795,7 +802,7 @@ function setupProfileContext($fields)
  */
 function saveProfileFields()
 {
-	global $profile_fields, $profile_vars, $context, $old_profile, $post_errors, $cur_profile;
+	global $profile_fields, $profile_vars, $context, $old_profile, $post_errors, $cur_profile, $smcFunc;
 
 	// Load them up.
 	loadProfileFields();
@@ -816,6 +823,8 @@ function saveProfileFields()
 	{
 		if (!isset($_POST[$key]) || !empty($field['is_dummy']) || (isset($_POST['preview_signature']) && $key == 'signature'))
 			continue;
+
+		$_POST[$key] = sanitize_chars($smcFunc['normalize']($_POST[$key]), in_array($key, array('member_name', 'real_name')) ? 1 : 0);
 
 		// What gets updated?
 		$db_key = isset($field['save_key']) ? $field['save_key'] : $key;
@@ -917,9 +926,9 @@ function saveProfileFields()
 	if ($changeOther && empty($post_errors))
 	{
 		makeThemeChanges($context['id_member'], isset($_POST['id_theme']) ? (int) $_POST['id_theme'] : $old_profile['id_theme']);
-		if (!empty($_REQUEST['sa']))
+		if (!empty($_REQUEST['area']))
 		{
-			$custom_fields_errors = makeCustomFieldChanges($context['id_member'], $_REQUEST['sa'], false, true);
+			$custom_fields_errors = makeCustomFieldChanges($context['id_member'], $_REQUEST['area'], false, true);
 
 			if (!empty($custom_fields_errors))
 				$post_errors = array_merge($post_errors, $custom_fields_errors);
@@ -961,25 +970,25 @@ function saveProfileChanges(&$profile_vars, &$post_errors, $memID)
 		'ignore_boards',
 	);
 
-	if (isset($_POST['sa']) && $_POST['sa'] == 'ignoreboards' && empty($_POST['ignore_brd']))
-		$_POST['ignore_brd'] = array();
+	if (isset($_POST['sa']) && $_POST['sa'] == 'ignoreboards' && empty($_POST['brd']))
+		$_POST['brd'] = array();
 
 	unset($_POST['ignore_boards']); // Whatever it is set to is a dirty filthy thing.  Kinda like our minds.
-	if (isset($_POST['ignore_brd']))
+	if (isset($_POST['brd']))
 	{
-		if (!is_array($_POST['ignore_brd']))
-			$_POST['ignore_brd'] = array($_POST['ignore_brd']);
+		if (!is_array($_POST['brd']))
+			$_POST['brd'] = array($_POST['brd']);
 
-		foreach ($_POST['ignore_brd'] as $k => $d)
+		foreach ($_POST['brd'] as $k => $d)
 		{
 			$d = (int) $d;
 			if ($d != 0)
-				$_POST['ignore_brd'][$k] = $d;
+				$_POST['brd'][$k] = $d;
 			else
-				unset($_POST['ignore_brd'][$k]);
+				unset($_POST['brd'][$k]);
 		}
-		$_POST['ignore_boards'] = implode(',', $_POST['ignore_brd']);
-		unset($_POST['ignore_brd']);
+		$_POST['ignore_boards'] = implode(',', $_POST['brd']);
+		unset($_POST['brd']);
 	}
 
 	// Here's where we sort out all the 'other' values...
@@ -988,8 +997,8 @@ function saveProfileChanges(&$profile_vars, &$post_errors, $memID)
 		makeThemeChanges($memID, isset($_POST['id_theme']) ? (int) $_POST['id_theme'] : $old_profile['id_theme']);
 		//makeAvatarChanges($memID, $post_errors);
 
-		if (!empty($_REQUEST['sa']))
-			makeCustomFieldChanges($memID, $_REQUEST['sa'], false);
+		if (!empty($_REQUEST['area']))
+			makeCustomFieldChanges($memID, $_REQUEST['area'], false);
 
 		foreach ($profile_bools as $var)
 			if (isset($_POST[$var]))
@@ -1190,7 +1199,7 @@ function makeNotificationChanges($memID)
 	}
 
 	// We are removing board preferences
-	elseif (isset($_POST['remove_notify_board']) && !empty($_POST['notify_boards']))
+	elseif (isset($_POST['remove_notify_boards']) && !empty($_POST['notify_boards']))
 	{
 		$prefs = array();
 		foreach ($_POST['notify_boards'] as $board)
@@ -1266,14 +1275,18 @@ function makeCustomFieldChanges($memID, $area, $sanitize = true, $returnErrors =
 			// Any masks?
 			if ($row['field_type'] == 'text' && !empty($row['mask']) && $row['mask'] != 'none')
 			{
+				// Decode all entities, including double-encoded ones.
+				while ($value !== html_entity_decode($value)) {
+					$value = html_entity_decode($value);
+				}
+
 				$value = $smcFunc['htmltrim']($value);
-				$valueReference = un_htmlspecialchars($value);
 
 				// Try and avoid some checks. '0' could be a valid non-empty value.
 				if (empty($value) && !is_numeric($value))
 					$value = '';
 
-				if ($row['mask'] == 'nohtml' && ($valueReference != strip_tags($valueReference) || $value != filter_var($value, FILTER_SANITIZE_STRING) || preg_match('/<(.+?)[\s]*\/?[\s]*>/si', $valueReference)))
+				if ($row['mask'] == 'nohtml' && $value !== strip_tags($value))
 				{
 					if ($returnErrors)
 						$errors[] = 'custom_field_nohtml_fail';
@@ -1281,7 +1294,7 @@ function makeCustomFieldChanges($memID, $area, $sanitize = true, $returnErrors =
 					else
 						$value = '';
 				}
-				elseif ($row['mask'] == 'email' && !empty($value) && (!filter_var($value, FILTER_VALIDATE_EMAIL) || strlen($value) > 255))
+				elseif ($row['mask'] == 'email' && !empty($value) && (!filter_var($value, FILTER_VALIDATE_EMAIL) || filter_var($value, FILTER_SANITIZE_EMAIL) !== $value || strlen($value) > 255))
 				{
 					if ($returnErrors)
 						$errors[] = 'custom_field_mail_fail';
@@ -1293,7 +1306,7 @@ function makeCustomFieldChanges($memID, $area, $sanitize = true, $returnErrors =
 				{
 					$value = (int) $value;
 				}
-				elseif (substr($row['mask'], 0, 5) == 'regex' && trim($value) != '' && preg_match(substr($row['mask'], 5), $value) === 0)
+				elseif (substr($row['mask'], 0, 5) == 'regex' && trim($value) != '' && trim(substr($row['mask'], 5)) !== '' && preg_match(substr($row['mask'], 5), $value) === 0)
 				{
 					if ($returnErrors)
 						$errors[] = 'custom_field_regex_fail';
@@ -1302,7 +1315,7 @@ function makeCustomFieldChanges($memID, $area, $sanitize = true, $returnErrors =
 						$value = '';
 				}
 
-				unset($valueReference);
+				$value = $smcFunc['htmlspecialchars']($value, ENT_QUOTES);
 			}
 		}
 
@@ -1342,10 +1355,7 @@ function makeCustomFieldChanges($memID, $area, $sanitize = true, $returnErrors =
 	}
 	$smcFunc['db_free_result']($request);
 
-	$hook_errors = call_integration_hook('integrate_save_custom_profile_fields', array(&$changes, &$log_changes, &$errors, $returnErrors, $memID, $area, $sanitize, &$deletes));
-
-	if (!empty($hook_errors) && is_array($hook_errors))
-		$errors = array_merge($errors, $hook_errors);
+	call_integration_hook('integrate_save_custom_profile_fields', array(&$changes, &$log_changes, &$errors, $returnErrors, $memID, $area, $sanitize, &$deletes));
 
 	// Make those changes!
 	if ((!empty($changes) || !empty($deletes)) && empty($context['password_auth_failed']) && empty($errors))
@@ -1405,7 +1415,7 @@ function editBuddyIgnoreLists($memID)
 	$context[$context['profile_menu_name']]['tab_data'] = array(
 		'title' => $txt['editBuddyIgnoreLists'],
 		'description' => $txt['buddy_ignore_desc'],
-		'icon' => 'profile_hd.png',
+		'icon_class' => 'main_icons profile_hd',
 		'tabs' => array(
 			'buddies' => array(),
 			'ignore' => array(),
@@ -1523,7 +1533,7 @@ function editBuddies($memID)
 
 	// Gotta load the custom profile fields names.
 	$request = $smcFunc['db_query']('', '
-		SELECT col_name, field_name, field_desc, field_type, bbc, enclose
+		SELECT col_name, field_name, field_desc, field_type, field_options, show_mlist, bbc, enclose
 		FROM {db_prefix}custom_fields
 		WHERE active = {int:active}
 			AND private < {int:private_level}',
@@ -1536,17 +1546,14 @@ function editBuddies($memID)
 	$context['custom_pf'] = array();
 	$disabled_fields = isset($modSettings['disabled_profile_fields']) ? array_flip(explode(',', $modSettings['disabled_profile_fields'])) : array();
 	while ($row = $smcFunc['db_fetch_assoc']($request))
-		if (!isset($disabled_fields[$row['col_name']]))
+		if (!isset($disabled_fields[$row['col_name']]) && !empty($row['show_mlist']))
 			$context['custom_pf'][$row['col_name']] = array(
-				'label' => $row['field_name'],
+				'label' => tokenTxtReplace($row['field_name']),
 				'type' => $row['field_type'],
+				'options' => !empty($row['field_options']) ? explode(',', $row['field_options']) : array(),
 				'bbc' => !empty($row['bbc']),
 				'enclose' => $row['enclose'],
 			);
-
-	// Gotta disable the gender option.
-	if (isset($context['custom_pf']['cust_gender']) && $context['custom_pf']['cust_gender'] == 'None')
-		unset($context['custom_pf']['cust_gender']);
 
 	$smcFunc['db_free_result']($request);
 
@@ -1592,6 +1599,16 @@ function editBuddies($memID)
 					continue;
 				}
 
+				$currentKey = 0;
+				if (!empty($column['options']))
+				{
+					foreach ($column['options'] as $k => $v)
+					{
+						if (empty($currentKey))
+							$currentKey = $v == $context['buddies'][$buddy]['options'][$key] ? $k : 0;
+					}
+				}
+
 				if ($column['bbc'] && !empty($context['buddies'][$buddy]['options'][$key]))
 					$context['buddies'][$buddy]['options'][$key] = strip_tags(parse_bbc($context['buddies'][$buddy]['options'][$key]));
 
@@ -1604,7 +1621,8 @@ function editBuddies($memID)
 						'{SCRIPTURL}' => $scripturl,
 						'{IMAGES_URL}' => $settings['images_url'],
 						'{DEFAULT_IMAGES_URL}' => $settings['default_images_url'],
-						'{INPUT}' => $context['buddies'][$buddy]['options'][$key],
+						'{KEY}' => $currentKey,
+						'{INPUT}' => tokenTxtReplace($context['buddies'][$buddy]['options'][$key]),
 					));
 			}
 		}
@@ -1880,7 +1898,7 @@ function getAvatars($directory, $level)
 		$extension = substr(strrchr($line, '.'), 1);
 
 		// Make sure it is an image.
-		if (strcasecmp($extension, 'gif') != 0 && strcasecmp($extension, 'jpg') != 0 && strcasecmp($extension, 'jpeg') != 0 && strcasecmp($extension, 'png') != 0 && strcasecmp($extension, 'bmp') != 0)
+		if (strcasecmp($extension, 'gif') != 0 && strcasecmp($extension, 'jpg') != 0 && strcasecmp($extension, 'jpeg') != 0 && strcasecmp($extension, 'png') != 0 && strcasecmp($extension, 'bmp') != 0 && strcasecmp($extension, 'webp') != 0)
 			continue;
 
 		$result[] = array(
@@ -2289,8 +2307,10 @@ function alert_mark($memID, $toMark, $read = 0)
 	$smcFunc['db_query']('', '
 		UPDATE {db_prefix}user_alerts
 		SET is_read = {int:read}
-		WHERE id_alert IN({array_int:toMark})',
+		WHERE id_alert IN({array_int:toMark})
+			AND id_member = {int:memID}',
 		array(
+			'memID' => $memID,
 			'read' => $read == 1 ? time() : 0,
 			'toMark' => $toMark,
 		)
@@ -2323,8 +2343,10 @@ function alert_delete($toDelete, $memID = false)
 
 	$smcFunc['db_query']('', '
 		DELETE FROM {db_prefix}user_alerts
-		WHERE id_alert IN({array_int:toDelete})',
+		WHERE id_alert IN({array_int:toDelete})
+			AND id_member = {int:memID}',
 		array(
+			'memID' => $memID,
 			'toDelete' => $toDelete,
 		)
 	);
@@ -2385,7 +2407,7 @@ function alert_count($memID, $unread = false)
 
 	// We have to do this the slow way as to iterate over all possible boards the user can see.
 	$request = $smcFunc['db_query']('', '
-		SELECT id_alert, content_id, content_type, content_action
+		SELECT id_alert, content_id, content_type, content_action, is_read
 		FROM {db_prefix}user_alerts
 		WHERE id_member = {int:id_member}
 			' . ($unread ? '
@@ -2482,10 +2504,54 @@ function alert_count($memID, $unread = false)
 	}
 
 	// Now check alerts again and remove any they can't see.
+	$deletes = array();
+	$num_unread_deletes = 0;
 	foreach ($alerts as $id_alert => $alert)
 	{
 		if (!$alert['visible'])
+		{
+			if (empty($alert['is_read']))
+				$num_unread_deletes++;
+
 			unset($alerts[$id_alert]);
+			$deletes[] = $id_alert;
+		}
+	}
+
+	// Penultimate task - delete these orphaned, invisible alerts, otherwise they might hang around forever.
+	// This can happen if they are deleted or moved to a board this user cannot access.
+	// Note that unread alerts are never purged.
+	if (!empty($deletes))
+	{
+		$smcFunc['db_query']('', '
+			DELETE FROM {db_prefix}user_alerts
+			WHERE id_alert IN ({array_int:alerts})
+				AND id_member = {int:member}',
+			array(
+				'member' => $memID,
+				'alerts' => $deletes,
+			)
+		);
+	}
+
+	// One last thing - tweak counter on member record.
+	// Do it directly, as updateMemberData() calls this function, and may create a loop.
+	// Note that $user_info is not populated when this is invoked via cron, hence the CASE statement.
+	if ($num_unread_deletes > 0)
+	{
+		$smcFunc['db_query']('', '
+			UPDATE {db_prefix}members
+			SET alerts =
+				CASE
+					WHEN alerts < {int:unread_deletes} THEN 0
+					ELSE alerts - {int:unread_deletes}
+				END
+			WHERE id_member = {int:member}',
+			array(
+				'unread_deletes' => $num_unread_deletes,
+				'member' => $memID,
+			)
+		);
 	}
 
 	return count($alerts);
@@ -2660,7 +2726,7 @@ function alert_notifications_boards($memID)
 	global $txt, $scripturl, $context, $sourcedir;
 
 	// Because of the way this stuff works, we want to do this ourselves.
-	if (isset($_POST['edit_notify_boards']) || isset($_POSt['remove_notify_boards']))
+	if (isset($_POST['edit_notify_boards']) || isset($_POST['remove_notify_boards']))
 	{
 		checkSession();
 		validateToken(str_replace('%u', $memID, 'profile-nt%u'), 'post');
@@ -3143,7 +3209,7 @@ function profileLoadGroups()
  */
 function profileLoadSignatureData()
 {
-	global $modSettings, $context, $txt, $cur_profile, $memberContext;
+	global $modSettings, $context, $txt, $cur_profile, $memberContext, $smcFunc;
 
 	// Signature limits.
 	list ($sig_limits, $sig_bbc) = explode(':', $modSettings['signature_settings']);
@@ -3170,10 +3236,10 @@ function profileLoadSignatureData()
 		$context['signature_warning'] = sprintf($txt['profile_error_signature_max_image_' . ($context['signature_limits']['max_image_width'] ? 'width' : 'height')], $context['signature_limits'][$context['signature_limits']['max_image_width'] ? 'max_image_width' : 'max_image_height']);
 
 	if (empty($context['do_preview']))
-		$context['member']['signature'] = empty($cur_profile['signature']) ? '' : str_replace(array('<br>', '<', '>', '"', '\''), array("\n", '&lt;', '&gt;', '&quot;', '&#039;'), $cur_profile['signature']);
+		$context['member']['signature'] = empty($cur_profile['signature']) ? '' : str_replace(array('<br>', '<br/>', '<br />', '<', '>', '"', '\''), array("\n", "\n", "\n", '&lt;', '&gt;', '&quot;', '&#039;'), $cur_profile['signature']);
 	else
 	{
-		$signature = !empty($_POST['signature']) ? $_POST['signature'] : '';
+		$signature = $_POST['signature'] = !empty($_POST['signature']) ? $smcFunc['normalize']($_POST['signature']) : '';
 		$validation = profileValidateSignature($signature);
 		if (empty($context['post_errors']))
 		{
@@ -3187,7 +3253,7 @@ function profileLoadSignatureData()
 		censorText($context['member']['signature']);
 		$context['member']['current_signature'] = $context['member']['signature'];
 		censorText($signature);
-		$context['member']['signature_preview'] = parse_bbc($signature, true, 'sig' . $memberContext[$context['id_member']]);
+		$context['member']['signature_preview'] = parse_bbc($signature, true, 'sig' . $memberContext[$context['id_member']], get_signature_allowed_bbc_tags());
 		$context['member']['signature'] = $_POST['signature'];
 	}
 
@@ -3216,7 +3282,7 @@ function profileLoadAvatarData()
 		'allow_server_stored' => (empty($modSettings['gravatarEnabled']) || empty($modSettings['gravatarOverride'])) && (allowedTo('profile_server_avatar') || (!$context['user']['is_owner'] && allowedTo('profile_extra_any'))),
 		'allow_upload' => (empty($modSettings['gravatarEnabled']) || empty($modSettings['gravatarOverride'])) && (allowedTo('profile_upload_avatar') || (!$context['user']['is_owner'] && allowedTo('profile_extra_any'))),
 		'allow_external' => (empty($modSettings['gravatarEnabled']) || empty($modSettings['gravatarOverride'])) && (allowedTo('profile_remote_avatar') || (!$context['user']['is_owner'] && allowedTo('profile_extra_any'))),
-		'allow_gravatar' => !empty($modSettings['gravatarEnabled']),
+		'allow_gravatar' => !empty($modSettings['gravatarEnabled']) && allowedTo('profile_gravatar'),
 	);
 
 	if ($context['member']['avatar']['allow_gravatar'] && (stristr($cur_profile['avatar'], 'gravatar://') || !empty($modSettings['gravatarOverride'])))
@@ -3394,6 +3460,7 @@ function profileSaveAvatarData(&$value)
 		return false;
 
 	require_once($sourcedir . '/ManageAttachments.php');
+	require_once($sourcedir . '/Subs-Graphics.php');
 
 	call_integration_hook('before_profile_save_avatar', array(&$value));
 
@@ -3411,7 +3478,7 @@ function profileSaveAvatarData(&$value)
 		if (!is_writable($uploadDir))
 			fatal_lang_error('attachments_no_write', 'critical');
 
-		$url = parse_url($_POST['userpicpersonal']);
+		$url = parse_iri($_POST['userpicpersonal']);
 		$contents = fetch_web_data($url['scheme'] . '://' . $url['host'] . (empty($url['port']) ? '' : ':' . $url['port']) . str_replace(' ', '%20', trim($url['path'])));
 
 		$new_filename = $uploadDir . '/' . getAttachmentFilename('avatar_tmp_' . $memID, false, null, true);
@@ -3455,7 +3522,7 @@ function profileSaveAvatarData(&$value)
 	elseif ($value == 'gravatar' && !empty($modSettings['gravatarEnabled']))
 	{
 		// One wasn't specified, or it's not allowed to use extra email addresses, or it's not a valid one, reset to default Gravatar.
-		if (empty($_POST['gravatarEmail']) || empty($modSettings['gravatarAllowExtraEmail']) || !filter_var($_POST['gravatarEmail'], FILTER_VALIDATE_EMAIL))
+		if (empty($_POST['gravatarEmail']) || empty($modSettings['gravatarAllowExtraEmail']) || !filter_var($_POST['gravatarEmail'], FILTER_VALIDATE_EMAIL) || filter_var($_POST['gravatarEmail'], FILTER_SANITIZE_EMAIL) !== $_POST['gravatarEmail'])
 			$profile_vars['avatar'] = 'gravatar://';
 		else
 			$profile_vars['avatar'] = 'gravatar://' . ($_POST['gravatarEmail'] != $cur_profile['email_address'] ? $_POST['gravatarEmail'] : '');
@@ -3474,7 +3541,7 @@ function profileSaveAvatarData(&$value)
 		removeAttachments(array('id_member' => $memID));
 
 		$profile_vars['avatar'] = str_replace(' ', '%20', preg_replace('~action(?:=|%3d)(?!dlattach)~i', 'action-', $_POST['userpicpersonal']));
-		$mime_valid = check_mime_type($profile_vars['avatar'], 'image/', true);
+		$mime_valid = check_mime_type($profile_vars['avatar'], 'image/', true, $mime_type);
 
 		if ($profile_vars['avatar'] == 'http://' || $profile_vars['avatar'] == 'http:///')
 			$profile_vars['avatar'] = '';
@@ -3483,6 +3550,20 @@ function profileSaveAvatarData(&$value)
 			return 'bad_avatar_invalid_url';
 		elseif (empty($mime_valid))
 			return 'bad_avatar';
+		// SVGs are special.
+		elseif ($mime_type === 'image/svg+xml')
+		{
+			$safe = false;
+
+			if (($tempfile = @tempnam($uploadDir, 'tmp_')) !== false && ($svg_content = @fetch_web_data($profile_vars['avatar'])) !== false && (file_put_contents($tempfile, $svg_content)) !== false)
+			{
+				$safe = checkSvgContents($tempfile);
+				@unlink($tempfile);
+			}
+
+			if (!$safe)
+				return 'bad_avatar';
+		}
 		// Should we check dimensions?
 		elseif (!empty($modSettings['avatar_max_height_external']) || !empty($modSettings['avatar_max_width_external']))
 		{
@@ -3531,11 +3612,53 @@ function profileSaveAvatarData(&$value)
 				$_FILES['attachment']['tmp_name'] = $new_filename;
 			}
 
-			$mime_valid = check_mime_type($_FILES['attachment']['tmp_name'], 'image/', true);
+			$mime_valid = check_mime_type($_FILES['attachment']['tmp_name'], 'image/', true, $mime_type);
 			$sizes = empty($mime_valid) ? false : @getimagesize($_FILES['attachment']['tmp_name']);
 
+			// SVGs are special.
+			if ($mime_type === 'image/svg+xml')
+			{
+				if ((checkSvgContents($_FILES['attachment']['tmp_name'])) === false)
+				{
+					@unlink($_FILES['attachment']['tmp_name']);
+					return 'bad_avatar';
+				}
+
+				$extension = 'svg';
+				$destName = 'avatar_' . $memID . '_' . time() . '.' . $extension;
+				extract(getSvgSize($_FILES['attachment']['tmp_name']));
+				$file_hash = '';
+
+				removeAttachments(array('id_member' => $memID));
+
+				$cur_profile['id_attach'] = $smcFunc['db_insert']('',
+					'{db_prefix}attachments',
+					array(
+						'id_member' => 'int', 'attachment_type' => 'int', 'filename' => 'string', 'file_hash' => 'string', 'fileext' => 'string', 'size' => 'int',
+						'width' => 'int', 'height' => 'int', 'mime_type' => 'string', 'id_folder' => 'int',
+					),
+					array(
+						$memID, 1, $destName, $file_hash, $extension, filesize($_FILES['attachment']['tmp_name']),
+						(int) $width, (int) $height, $mime_type, $id_folder,
+					),
+					array('id_attach'),
+					1
+				);
+
+				$cur_profile['filename'] = $destName;
+				$cur_profile['attachment_type'] = 1;
+
+				$destinationPath = $uploadDir . '/' . $destName;
+				if (!rename($_FILES['attachment']['tmp_name'], $destinationPath))
+				{
+					removeAttachments(array('id_member' => $memID));
+					fatal_lang_error('attach_timeout', 'critical');
+				}
+
+				smf_chmod($destinationPath, 0644);
+			}
 			// No size, then it's probably not a valid pic.
-			if ($sizes === false)
+			elseif ($sizes === false)
 			{
 				@unlink($_FILES['attachment']['tmp_name']);
 				return 'bad_avatar';
@@ -3598,11 +3721,12 @@ function profileSaveAvatarData(&$value)
 					'1' => 'gif',
 					'2' => 'jpg',
 					'3' => 'png',
-					'6' => 'bmp'
+					'6' => 'bmp',
+					'18' => 'webp'
 				);
 
 				$extension = isset($extensions[$sizes[2]]) ? $extensions[$sizes[2]] : 'bmp';
-				$mime_type = 'image/' . ($extension === 'jpg' ? 'jpeg' : ($extension === 'bmp' ? 'x-ms-bmp' : $extension));
+				$mime_type = str_replace('image/bmp', 'image/x-ms-bmp', $mime_type);
 				$destName = 'avatar_' . $memID . '_' . time() . '.' . $extension;
 				list ($width, $height) = getimagesize($_FILES['attachment']['tmp_name']);
 				$file_hash = '';
@@ -3636,7 +3760,7 @@ function profileSaveAvatarData(&$value)
 				}
 
 				// Attempt to chmod it.
-				smf_chmod($uploadDir . '/' . $destinationPath, 0644);
+				smf_chmod($destinationPath, 0644);
 			}
 			$profile_vars['avatar'] = '';
 
@@ -3862,7 +3986,7 @@ function profileValidateEmail($email, $memID = 0)
 	// Check the name and email for validity.
 	if (trim($email) == '')
 		return 'no_email';
-	if (!filter_var($email, FILTER_VALIDATE_EMAIL))
+	if (!filter_var($email, FILTER_VALIDATE_EMAIL) || filter_var($email, FILTER_SANITIZE_EMAIL) !== $email)
 		return 'bad_email';
 
 	// Email addresses should be and stay unique.
@@ -3870,9 +3994,10 @@ function profileValidateEmail($email, $memID = 0)
 		SELECT id_member
 		FROM {db_prefix}members
 		WHERE ' . ($memID != 0 ? 'id_member != {int:selected_member} AND ' : '') . '
-			email_address = {string:email_address}
+			{raw:email_address_field} = {string:email_address}
 		LIMIT 1',
 		array(
+			'email_address_field' => $smcFunc['db_case_sensitive'] ? 'LOWER(email_address)' : 'email_address',
 			'selected_member' => $memID,
 			'email_address' => $email,
 		)
@@ -4126,6 +4251,9 @@ function groupMembership2($profile_vars, $post_errors, $memID)
 				fatal_lang_error('no_access', false);
 			elseif ($changeType == 'free' && $row['group_type'] != 3 && $row['group_type'] != 2)
 				fatal_lang_error('no_access', false);
+			elseif ($changeType == 'primary' && !isset($addGroups[$row['id_group']])) {
+				fatal_lang_error('no_access', false);			
+			}
 
 			// We can't change the primary group if this is hidden!
 			if ($row['hidden'] == 2)

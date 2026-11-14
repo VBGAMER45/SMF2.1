@@ -7,10 +7,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -118,7 +118,19 @@ class Attachments
 
 		$this->_attchDir = $context['attach_dir'] = $this->_attachmentUploadDir[$modSettings['currentAttachmentUploadDir']];
 
-		$this->_canPostAttachment = $context['can_post_attachment'] = !empty($modSettings['attachmentEnable']) && $modSettings['attachmentEnable'] == 1 && (allowedTo('post_attachment', $this->_board) || ($modSettings['postmod_active'] && allowedTo('post_unapproved_attachments', $this->_board)));
+		$this->_canPostAttachment = $context['can_post_attachment'] = !empty($modSettings['attachmentEnable'])
+			&& $modSettings['attachmentEnable'] == 1
+			&& (
+				allowedTo('post_attachment', $this->_board)
+				|| (
+					$modSettings['postmod_active']
+					&& allowedTo('post_unapproved_attachments', $this->_board)
+				)
+			)
+			&& (
+				empty($this->_msg)
+				|| $this->canModifyMsg($this->_msg, $this->_board)
+			);
 	}
 
 	/**
@@ -155,15 +167,33 @@ class Attachments
 	 */
 	public function delete()
 	{
-		global $sourcedir;
+		global $sourcedir, $user_info, $modSettings;
 
 		// Need this, don't ask why just nod your head.
 		require_once($sourcedir . '/ManageAttachments.php');
 
 		$attachID = !empty($_REQUEST['attach']) && is_numeric($_REQUEST['attach']) ? (int) $_REQUEST['attach'] : 0;
 
+		if (checkSession('get', '', false) !== '' || $attachID === 0)
+			return $this->setResponse(array(
+				'text' => 'attached_file_deleted_error',
+				'type' => 'error',
+				'data' => false,
+			));
+
+		$msgInfo = getAttachMsgInfo($attachID);
+
+		$can_modify = false;
+
+		if ($msgInfo !== [] && $msgInfo['msg'] > 0) {
+			$can_modify = $msgInfo !== [] && !$user_info['is_guest'] && (!$msgInfo['is_locked'] || allowedTo('moderate_board') ) && (allowedTo('modify_any') || (allowedTo('modify_replies') && $msgInfo['id_member_started'] == $user_info['id']) || (allowedTo('modify_own') && $msgInfo['id_member'] == $user_info['id'] && (empty($modSettings['edit_disable_time']) || !$msgInfo['approved'] || $msgInfo['poster_time'] + $modSettings['edit_disable_time'] * 60 > time())));
+		}
+		else if ($msgInfo !== [] && $msgInfo['msg'] == 0) {
+			$can_modify = !empty($_SESSION['already_attached']) && isset($_SESSION['already_attached'][$attachID]);
+		}
+
 		// Need something to work with.
-		if (!$attachID || (!empty($_SESSION['already_attached']) && !isset($_SESSION['already_attached'][$attachID])))
+		if (!$can_modify)
 			return $this->setResponse(array(
 				'text' => 'attached_file_deleted_error',
 				'type' => 'error',
@@ -225,7 +255,7 @@ class Attachments
 		// If this isn't a new post, check the current attachments.
 		if (isset($_REQUEST['msg']))
 		{
-			$context['attachments']['quantity'] = count($context['current_attachments']);
+			$context['attachments']['quantity'] = !empty($context['current_attachments']) ? count($context['current_attachments']) : 0;
 			foreach ($context['current_attachments'] as $attachment)
 				$context['attachments']['total_size'] += $attachment['size'];
 		}
@@ -433,7 +463,7 @@ class Attachments
 
 				foreach ($attachment['errors'] as $error)
 				{
-					$attachmentOptions['errors'][] = vsprintf($txt['attach_warning'], $attachment['name']);
+					$attachmentOptions['errors'][] = sprintf($txt['attach_warning'], $attachment['name']);
 
 					if (!is_array($error))
 					{
@@ -442,7 +472,7 @@ class Attachments
 							log_error($attachment['name'] . ': ' . $txt[$error], 'critical');
 					}
 					else
-						$attachmentOptions['errors'][] = vsprintf($txt[$error[0]], $error[1]);
+						$attachmentOptions['errors'][] = vsprintf($txt[$error[0]], (array) $error[1]);
 				}
 				if (file_exists($attachment['tmp_name']))
 					unlink($attachment['tmp_name']);
@@ -486,12 +516,12 @@ class Attachments
 		);
 
 		// Adding needs some VIP treatment.
-		if ($this->_sa == 'add')
+		if ($this->_sa == 'add' && empty($data))
 		{
 			// Is there any generic errors? made some sense out of them!
 			if ($this->_generalErrors)
 				foreach ($this->_generalErrors as $k => $v)
-					$this->_generalErrors[$k] = (is_array($v) ? vsprintf($txt[$v[0]], $v[1]) : $txt[$v]);
+					$this->_generalErrors[$k] = (is_array($v) ? vsprintf($txt[$v[0]], (array) $v[1]) : $txt[$v]);
 
 			// Gotta urlencode the filename.
 			if ($this->_attachResults)
@@ -519,9 +549,8 @@ class Attachments
 
 		ob_end_clean();
 
-		if (!empty($modSettings['CompressedOutput']))
+		if (!empty($modSettings['enableCompressedOutput']))
 			@ob_start('ob_gzhandler');
-
 		else
 			ob_start();
 
@@ -533,6 +562,49 @@ class Attachments
 		// Done.
 		obExit(false);
 		die;
+	}
+
+	/**
+	 * Can they modify this message?
+	*/
+	protected function canModifyMsg(int $id_msg, int $id_board): bool
+	{
+		global $smcFunc, $user_info;
+
+		// No message or a guest, you can't modify a message
+		if ($this->_msg === 0 || empty($user_info['id'])) {
+			return false;
+		}
+
+		$request = $smcFunc['db_query']('', '
+			SELECT
+				m.id_member
+			FROM {db_prefix}messages AS m
+			WHERE m.id_msg = {int:id_msg}
+				and m.id_board = {int:id_board}',
+			array(
+				'id_msg' => $id_msg,
+				'id_board' => $id_board,
+			)
+		);
+
+		// Can't find the message, can't edit it.
+		if ($smcFunc['db_num_rows']($request) == 0) {
+			return false;
+		}
+		$row = $smcFunc['db_fetch_assoc']($request);
+
+		// Either you can modify anything, or this is your own message.
+		if (
+			allowedTo('modify_any', $id_board)
+		 	|| (
+		 		$row['id_member'] == $user_info['id']
+		 		&& allowedTo('modify_own', $id_board)
+		 	)
+		 )
+		 	return true;
+
+		return false;
 	}
 }
 

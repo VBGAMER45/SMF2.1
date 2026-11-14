@@ -1,5 +1,5 @@
 <?php
-// Version: 2.1 RC4; Errors
+// Version: 2.1.7; Errors
 
 global $scripturl, $modSettings;
 
@@ -143,6 +143,7 @@ $txt['poll_range_error'] = 'Sorry, the poll must run for more than 0 days.';
 $txt['delFirstPost'] = 'You are not allowed to delete the first post in a topic.<p>If you want to delete this topic, click on the Remove Topic link, or ask a moderator/administrator to do it for you.</p>';
 $txt['parent_error'] = 'Unable to create board!';
 $txt['login_cookie_error'] = 'You were unable to login. Please check your cookie settings.';
+$txt['func_cookie_error'] = 'This function requires cookies enabled. Please check your cookie settings.';
 $txt['login_ssl_required'] = 'You can only login via HTTPS';
 $txt['register_ssl_required'] = 'You can only register via HTTPS';
 $txt['incorrect_answer'] = 'Sorry, but you did not answer your question correctly. Please click back to try again, or click back twice to use the default method of obtaining your password.';
@@ -188,6 +189,7 @@ $txt['no_bantype_selected'] = 'No ban type was selected';
 $txt['ban_not_found'] = 'Ban not found';
 $txt['ban_unknown_restriction_type'] = 'Restriction type unknown';
 $txt['ban_name_empty'] = 'The name of the ban was left empty';
+$txt['ban_name_is_too_long'] = 'The selected name is too long. Use no more than 20 characters.';
 $txt['ban_id_empty'] = 'Ban id not found';
 $txt['ban_no_triggers'] = 'No ban triggers specified';
 $txt['ban_ban_item_empty'] = 'Ban trigger not found';
@@ -350,6 +352,7 @@ $txt['profile_error_already_requested_group'] = 'You already have an outstanding
 $txt['profile_error_signature_not_yet_saved'] = 'The signature has not been saved.';
 $txt['profile_error_personal_text_too_long'] = 'The personal text is too long.';
 $txt['profile_error_user_title_too_long'] = 'The custom title is too long.';
+$txt['profile_error_website_title_too_long'] = 'The website title is too long.';
 $txt['profile_error_custom_field_mail_fail'] = 'The mail validation check returned an error, you need to enter an email in a valid format (user@domain).';
 $txt['profile_error_custom_field_regex_fail'] = 'The regex verification returned an error. If you are unsure about what to type here, please contact the forum administrator.';
 $txt['profile_error_custom_field_nohtml_fail'] = 'HTML tags are not allowed.';
@@ -520,5 +523,7 @@ $txt['create_post_invalid_member_id'] = 'createPost(): invalid member id \'%d\''
 $txt['invalid_statistic_type'] = 'updateStats(): invalid statistic type \'%s\'';
 
 $txt['fetch_web_data_bad_url'] = 'fetch_web_data(): Bad URL';
+
+$txt['unicode_update_failed'] = 'A new version of Unicode is available, but SMF could not update to it. Please make sure %1$s and all the files in it are writable. SMF will try to update its Unicode data files again automatically.';
 
 ?>

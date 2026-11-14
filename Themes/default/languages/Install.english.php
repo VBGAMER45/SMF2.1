@@ -1,9 +1,9 @@
 <?php
-// Version: 2.1 RC4; Install
+// Version: 2.1.7; Install
 
 // These should be the same as those in index.language.php.
 $txt['lang_character_set'] = 'UTF-8';
-$txt['lang_rtl'] = false;
+$txt['lang_rtl'] = '0';
 
 $txt['install_step_welcome'] = 'Welcome';
 $txt['install_step_writable'] = 'Writable check';
@@ -28,6 +28,7 @@ $txt['install_welcome'] = 'Welcome';
 $txt['install_welcome_desc'] = 'Welcome to SMF. This script will guide you through the process for installing %1$s. We will gather a few details about your forum over the next few steps, and after a couple of minutes your forum will be ready for use.';
 $txt['install_no_https'] = 'Your environment does not support https streams.  Certain functions, e.g., receiving updates from simplemachines.org, will not work.';
 $txt['install_no_mbstring'] = 'Your environment does not support the required mbstring library.  Please enable mbstring and try again.';
+$txt['install_no_fileinfo'] = 'Your environment does not support the required fileinfo library.  Please enable fileinfo and try again.';
 $txt['install_all_lovely'] = 'We have completed some initial tests on your server and everything appears to be in order. Simply click the &quot;Continue&quot; button below to get started.';
 
 $txt['user_refresh_install'] = 'Forum Refreshed';
@@ -106,9 +107,6 @@ $txt['install_settings_dbsession'] = 'Database Sessions';
 $txt['install_settings_dbsession_title'] = 'Use the database for sessions instead of using files.';
 $txt['install_settings_dbsession_info1'] = 'This feature is almost always for the best, as it makes sessions more dependable.';
 $txt['install_settings_dbsession_info2'] = 'This feature is generally a good idea, but it may not work properly on this server.';
-$txt['install_settings_utf8'] = 'UTF-8 Character Set';
-$txt['install_settings_utf8_title'] = 'Use UTF-8 as default character set';
-$txt['install_settings_utf8_info'] = 'This feature lets both the database and the forum use an international character set, UTF-8. This can be useful when working with multiple languages that use different character sets.';
 $txt['install_settings_stats'] = 'Allow stat Collection';
 $txt['install_settings_stats_title'] = 'Allow Simple Machines to collect basic stats monthly';
 $txt['install_settings_stats_info'] = 'If enabled, this will allow Simple Machines to visit your site once a month to collect basic statistics. This will help us make decisions as to which configurations to optimize the software for. For more information please visit our <a href="https://www.simplemachines.org/about/stats.php" target="_blank" rel="noopener">info page</a>.';
@@ -145,7 +143,7 @@ $txt['user_settings_username'] = 'Your username';
 $txt['user_settings_username_info'] = 'Choose the name you want to login with.<br>This can be changed later.';
 $txt['user_settings_password'] = 'Password';
 $txt['user_settings_password_info'] = 'Fill in your preferred password here and remember it well!';
-$txt['user_settings_again'] = 'Password';
+$txt['user_settings_again'] = 'Retype Password';
 $txt['user_settings_again_info'] = '(just for verification).';
 $txt['user_settings_admin_email'] = 'Administrator email address';
 $txt['user_settings_admin_email_info'] = 'Provide your email address. This must be a valid email address!';
@@ -273,6 +271,7 @@ $txt['upgrade_customize'] = 'Customize';
 $txt['upgrade_debug_info'] = 'Output extra debugging information.';
 $txt['upgrade_empty_errorlog'] = 'Empty error log before upgrading.';
 $txt['upgrade_delete_karma'] = 'Delete all karma settings and info from the DB';
+$txt['upgrade_reprocess_attachments'] = 'Rerun attachment conversion';
 $txt['upgrade_stats_collection'] = 'Allow Simple Machines to collect basic stats monthly.';
 $txt['upgrade_stats_info'] = 'If enabled, this will allow Simple Machines to visit your site once a month to collect basic statistics. This will help us make decisions as to which configurations to optimise the software for. For more information please visit our <a href="%1$s" target="_blank" rel="noopener">info page</a>.';
 $txt['upgrade_migrate_settings_file'] = 'Migrate to a new Settings file.';
@@ -372,6 +371,11 @@ $txt['error_not_admin'] = 'You need to be an admin to perform an upgrade!';
 
 $txt['warning_lang_old'] = 'The language files for your selected language, %1$s, have not been updated to the latest version. Upgrade will continue with the forum default, %2$s.';
 $txt['warning_lang_missing'] = 'The upgrader could not find the &quot;Install&quot; language file for your selected language, %1$s. Upgrade will continue with the forum default, %2$s.';
+
+// Attachment & Avatar folder checks
+$txt['warning_av_missing'] = 'Warning! Avatar directory not found. Continuing may be unsafe. Please confirm folder settings before proceeding.';
+$txt['warning_custom_av_missing'] = 'Warning! Custom avatar directory not found. Continuing may be unsafe. Please confirm folder settings before proceeding.';
+$txt['warning_att_dir_missing'] = 'Warning! One or more attachment directories not found. Continuing may be unsafe. Please confirm folder settings before proceeding.';
 
 // Page titles
 $txt['updating_smf_installation'] = 'Updating Your SMF Installation!';

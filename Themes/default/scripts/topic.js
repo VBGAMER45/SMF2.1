@@ -715,7 +715,7 @@ $(function() {
 		e.preventDefault();
 		var title = $(this).parent().text(),
 			url = $(this).attr('href') + ';js=1';
-		return reqOverlayDiv(url, title, 'post/thumbup.png');
+		return reqOverlayDiv(url, title, 'like');
 	});
 
 	// Message likes.
@@ -726,6 +726,12 @@ $(function() {
 		$.ajax({
 			type: 'GET',
 			url: obj.attr('href') + ';js=1',
+			headers: {
+				"X-SMF-AJAX": 1
+			},
+			xhrFields: {
+				withCredentials: typeof allow_xhjr_credentials !== "undefined" ? allow_xhjr_credentials : false
+			},
 			cache: false,
 			dataType: 'html',
 			success: function(html){
@@ -747,7 +753,7 @@ $(function() {
 		ajax_indicator(true);
 		$.get($obj.attr('href') + ';xml', function () {
 			ajax_indicator(false);
-			$('.button_strip_notify').text($obj.find('strong').text());
+			$('.button_strip_notify').text($obj.find('strong').text()).next('.dropmenu').hide();
 		});
 
 		return false;

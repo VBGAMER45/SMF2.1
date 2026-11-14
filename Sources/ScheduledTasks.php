@@ -7,10 +7,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2025 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.7
  */
 
 if (!defined('SMF'))
@@ -350,6 +350,42 @@ function scheduled_daily_digest()
 	if (empty($boards))
 		return true;
 
+	// The preferred way...
+	require_once($sourcedir . '/Subs-Notify.php');
+	$prefs = getNotifyPrefs(
+		array_keys($members),
+		array_merge(
+			array('msg_notify_type', 'msg_notify_pref', 'board_notify', 'topic_notify'),
+			array_map(function($id) { return 'board_notify_' . $id; }, array_keys(isset($notify['boards']) ? $notify['boards'] : array())),
+			array_map(function($id) { return 'topic_notify_' . $id; }, array_keys(isset($notify['topics']) ? $notify['topics'] : array()))
+		),
+		true
+	);
+
+	// Watching a board or a topic is not on its own a request to be emailed
+	// about it: the alert and the email are separate bits of the same
+	// preference (0x02 is the email bit), and a member can ask for one without
+	// the other. A digest is an email, so members who only wanted an alert do
+	// not belong in the lists that decide who is told about what.
+	foreach (array('boards' => 'board', 'topics' => 'topic') as $key => $type)
+	{
+		if (empty($notify[$key]))
+			continue;
+
+		foreach ($notify[$key] as $id => $watchers)
+		{
+			$notify[$key][$id] = array_values(array_filter($watchers, function($mid) use ($prefs, $type, $id)
+			{
+				// A per board or per topic preference of zero means nothing was
+				// chosen for that one in particular, so the member's general
+				// preference decides.
+				$pref = !empty($prefs[$mid][$type . '_notify_' . $id]) ? $prefs[$mid][$type . '_notify_' . $id] : (!empty($prefs[$mid][$type . '_notify']) ? $prefs[$mid][$type . '_notify'] : 0);
+
+				return ($pref & 0x02) != 0;
+			}));
+		}
+	}
+
 	// Just get the board names.
 	$request = $smcFunc['db_query']('', '
 		SELECT id_board, name
@@ -462,10 +498,6 @@ function scheduled_daily_digest()
 		call_integration_hook('integrate_daily_digest_lang', array(&$langtxt, $lang));
 	}
 
-	// The preferred way...
-	require_once($sourcedir . '/Subs-Notify.php');
-	$prefs = getNotifyPrefs(array_keys($members), array('msg_notify_type', 'msg_notify_pref'), true);
-
 	// Right - send out the silly things - this will take quite some space!
 	$members_sent = array();
 	foreach ($members as $mid => $member)
@@ -477,6 +509,11 @@ function scheduled_daily_digest()
 		if ($frequency < 3 || $frequency == 4 && !$is_weekly || $frequency == 3 && $is_weekly || $notify_types == 4)
 			continue;
 
+		// Write to this member in their own language. $langs was collected from
+		// the same lngfile values as $members, so there are strings here for
+		// every member, including those whose lngfile is empty.
+		$lang = $member['lang'];
+
 		// Right character set!
 		$context['character_set'] = empty($modSettings['global_character_set']) ? $langtxt[$lang]['char_set'] : $modSettings['global_character_set'];
 
@@ -486,6 +523,16 @@ function scheduled_daily_digest()
 			'body' => $member['name'] . ',' . "\n\n" . $langtxt[$lang]['intro'] . "\n" . $scripturl . '?action=profile;area=notification;u=' . $member['id'] . "\n",
 			'email' => $member['email'],
 		);
+
+		// What the mail says before anything specific to this member has been
+		// added to it. Whether it still says only this at the end is how we
+		// know there was nothing to tell them about.
+		$greeting_only = $email['body'];
+
+		// Each section below sets this when it writes its heading, and a
+		// section is skipped rather than entered when there is nothing of that
+		// kind, so it needs a value that is this member's own.
+		$titled = false;
 
 		// All new topics?
 		if (isset($types['topic']))
@@ -554,8 +601,14 @@ function scheduled_daily_digest()
 		if ($titled)
 			$email['body'] .= "\n";
 
+		// Watching something is not the same as there being anything to report
+		// about it. A greeting and an unsubscribe link on their own tell the
+		// member nothing.
+		if ($email['body'] === $greeting_only)
+			continue;
+
 		// Then just say our goodbyes!
-		$email['body'] .= "\n\n" . sprintf($txt['regards_team'], $context['forum_name']);
+		$email['body'] .= "\n\n" . $langtxt[$lang]['bye'];
 
 		// Send it - low priority!
 		sendmail($email['email'], $email['subject'], $email['body'], null, 'digest', false, 4);
@@ -712,12 +765,12 @@ function ReduceMailQueue($number = false, $override_limit = false, $force_send =
 
 	// Now we know how many we're sending, let's send them.
 	$request = $smcFunc['db_query']('', '
-		SELECT id_mail, recipient, body, subject, headers, send_html, time_sent, private
+		SELECT id_mail, recipient, body, subject, headers, send_html, time_sent, private, priority
 		FROM {db_prefix}mail_queue
 		ORDER BY priority ASC, id_mail ASC
 		LIMIT {int:limit}',
 		array(
-			'limit' => $number,
+			'limit' => ceil($number * 0.7),
 		)
 	);
 	$ids = array();
@@ -734,9 +787,41 @@ function ReduceMailQueue($number = false, $override_limit = false, $force_send =
 			'send_html' => $row['send_html'],
 			'time_sent' => $row['time_sent'],
 			'private' => $row['private'],
+			'priority' => $row['priority'],
 		);
 	}
 	$smcFunc['db_free_result']($request);
+
+	// Random emails from the queue..
+	if (!empty($ids)) {
+		$request = $smcFunc['db_query']('random_mail', '
+			SELECT id_mail, recipient, body, subject, headers, send_html, time_sent, private, priority
+			FROM {db_prefix}mail_queue
+			WHERE id_mail NOT IN ({array_int:ids})
+			ORDER BY RAND()
+			LIMIT {int:limit}',
+			array(
+				'ids' => $ids,
+				'limit' => ceil($number * 0.3),
+			)
+		);
+		while ($row = $smcFunc['db_fetch_assoc']($request))
+		{
+			// We want to delete these from the database ASAP, so just get the data and go.
+			$ids[] = $row['id_mail'];
+			$emails[] = array(
+				'to' => $row['recipient'],
+				'body' => $row['body'],
+				'subject' => $row['subject'],
+				'headers' => $row['headers'],
+				'send_html' => $row['send_html'],
+				'time_sent' => $row['time_sent'],
+				'private' => $row['private'],
+				'priority' => $row['priority'],
+			);
+		}
+		$smcFunc['db_free_result']($request);
+	}
 
 	// Delete, delete, delete!!!
 	if (!empty($ids))
@@ -772,8 +857,36 @@ function ReduceMailQueue($number = false, $override_limit = false, $force_send =
 
 	// Send each email, yea!
 	$failed_emails = array();
+	$max_priority = 127;
+	$smtp_expire = 259200;
+	$priority_offset = 8;
 	foreach ($emails as $email)
 	{
+		// First, figure out when the next send attempt should happen based on the current priority.
+		$next_send_time = $email['time_sent'];
+		if ($email['priority'] >= $priority_offset) {
+			for ($i = 0; $i < $email['priority']; $i++) {
+				$next_send_time += 20 * max(0, $email['priority'] - $priority_offset);
+			}
+		}
+
+		// If the email is too old, discard it.
+		if ($next_send_time > $email['time_sent'] + $smtp_expire) {
+			continue;
+		}
+
+		++$email['priority'];
+
+		// Don't send if it's too soon.
+		if (time() < $next_send_time) {
+			if ($email['priority'] < $max_priority) {
+				$failed_emails[] = array($email['to'], $email['body'], $email['subject'], $email['headers'], $email['send_html'], $email['time_sent'], $email['private'], $email['priority']);
+			}
+
+			continue;
+		}
+
+		// Try to send.
 		if (empty($modSettings['mail_type']) || $modSettings['smtp_host'] == '')
 		{
 			$email['subject'] = strtr($email['subject'], array("\r" => '', "\n" => ''));
@@ -794,9 +907,10 @@ function ReduceMailQueue($number = false, $override_limit = false, $force_send =
 		else
 			$result = smtp_mail(array($email['to']), $email['subject'], $email['body'], $email['headers']);
 
-		// Hopefully it sent?
-		if (!$result)
-			$failed_emails[] = array($email['to'], $email['body'], $email['subject'], $email['headers'], $email['send_html'], $email['time_sent'], $email['private']);
+		// If we failed, and we haven't already hit the limit, schedule this for another attempt.
+		if (empty($result) && $email['priority'] < $max_priority) {
+			$failed_emails[] = array($email['to'], $email['body'], $email['subject'], $email['headers'], $email['send_html'], $email['time_sent'], $email['private'], $email['priority']);
+		}
 	}
 
 	// Any emails that didn't send?
@@ -826,7 +940,7 @@ function ReduceMailQueue($number = false, $override_limit = false, $force_send =
 		// Add our email back to the queue, manually.
 		$smcFunc['db_insert']('insert',
 			'{db_prefix}mail_queue',
-			array('recipient' => 'string', 'body' => 'string', 'subject' => 'string', 'headers' => 'string', 'send_html' => 'string', 'time_sent' => 'string', 'private' => 'int'),
+			array('recipient' => 'string', 'body' => 'string', 'subject' => 'string', 'headers' => 'string', 'send_html' => 'string', 'time_sent' => 'string', 'private' => 'int', 'priority' => 'int'),
 			$failed_emails,
 			array('id_mail')
 		);
@@ -1322,6 +1436,12 @@ function scheduled_weekly_maintenance()
 		array('$sourcedir/tasks/UpdateTldRegex.php', 'Update_TLD_Regex', '', 0), array()
 	);
 
+	// Ensure Unicode data files are up to date
+	$smcFunc['db_insert']('insert', '{db_prefix}background_tasks',
+		array('task_file' => 'string-255', 'task_class' => 'string-255', 'task_data' => 'string', 'claimed_time' => 'int'),
+		array('$sourcedir/tasks/UpdateUnicode.php', 'Update_Unicode', '', 0), array()
+	);
+
 	// Run Cache housekeeping
 	if (!empty($cache_enable) && !empty($cacheAPI))
 		$cacheAPI->housekeeping();
@@ -1409,11 +1529,14 @@ function scheduled_paid_subscriptions()
 
 		$emaildata = loadEmailTemplate('paid_subscription_reminder', $replacements, empty($row['lngfile']) || empty($modSettings['userLanguage']) ? $language : $row['lngfile']);
 
+		// Check notification prefs.
+		$subs_notify = isset($notifyPrefs[$row['id_member']]['paidsubs_expiring']) ? $notifyPrefs[$row['id_member']]['paidsubs_expiring'] : 0;
+
 		// Send the actual email.
-		if ($notifyPrefs[$row['id_member']] & 0x02)
+		if ($subs_notify & 0x02)
 			sendmail($row['email_address'], $emaildata['subject'], $emaildata['body'], null, 'paid_sub_remind', $emaildata['is_html'], 2);
 
-		if ($notifyPrefs[$row['id_member']] & 0x01)
+		if ($subs_notify & 0x01)
 		{
 			$alert_rows[] = array(
 				'alert_time' => time(),

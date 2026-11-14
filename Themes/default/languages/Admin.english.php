@@ -1,5 +1,5 @@
 <?php
-// Version: 2.1 RC4; Admin
+// Version: 2.1.3; Admin
 
 global $settings, $scripturl;
 
@@ -51,7 +51,7 @@ $txt['admin_agreement_not_saved'] = 'The agreement changes have not been saved. 
 $txt['admin_delete_members'] = 'Delete Selected Members';
 $txt['admin_repair'] = 'Repair all boards and topics';
 $txt['admin_main_welcome'] = 'This is your &quot;%1$s&quot;. From here, you can edit settings, maintain your forum, view logs, install packages, manage themes, and many other things.<br><br>If you have any trouble, please look at the &quot;Support &amp; Credits&quot; page. If the information there doesn\'t help you, feel free to <a href="https://www.simplemachines.org/community/index.php" target="_blank" rel="noopener">look to us for help</a> with the problem.<br>You may also find answers to your questions or problems by clicking the <span class="main_icons help" title="%3$s"></span> symbols for more information on the related functions.';
-$txt['admin_news_desc'] = 'Please place one news item per box. BBC tags, such as <span title="Are you bold?">[b]</span>, <span title="I tall icks!!">[i]</span> and <span title="Brackets are great, no?">[u]</span> are allowed in your news, as well as smileys. Clear a news item\'s text box to remove it.';
+$txt['admin_news_desc'] = 'Please place one news item per box. <abbr title="Bulletin Board Code">BBC</abbr> <span title="Because everyone loves brackets!">tags</span>, such as <span class="monospace">[b]</span>, <span class="monospace">[i]</span> and <span class="monospace">[u]</span>, are allowed in your news, as well as smileys. Clear a news item\'s text box to remove it.';
 $txt['administrators'] = 'Forum Administrators';
 $txt['admin_reserved_desc'] = 'Reserved names will keep members from registering certain usernames or using these words in their displayed names. Choose the options you wish to use from the bottom before submitting.';
 $txt['admin_match_whole'] = 'Match whole name only. If unchecked, search within names.';
@@ -363,6 +363,7 @@ $txt['attachment_image_paranoid'] = 'Perform extensive security checks on upload
 $txt['attachmentThumbnails'] = 'Resize images when showing under posts';
 $txt['attachment_thumb_png'] = 'Save thumbnails as PNG';
 $txt['attachment_thumb_memory'] = 'Adaptive thumbnail memory';
+$txt['attachment_thumb_memory_note'] = 'If disabled, memory is limited to 128M';
 $txt['attachmentThumbWidth'] = 'Maximum width of thumbnails';
 $txt['attachmentThumbHeight'] = 'Maximum height of thumbnails';
 $txt['attachment_thumbnail_settings'] = 'Thumbnail Settings';
@@ -370,7 +371,8 @@ $txt['attachment_security_settings'] = 'Attachment security settings';
 
 $txt['attach_dir_does_not_exist'] = 'Does not exist';
 $txt['attach_dir_not_writable'] = 'Not writable';
-$txt['attach_dir_files_missing'] = 'Files Missing (<a href="' . $scripturl . '?action=admin;area=manageattachments;sa=repair;%2$s=%1$s">Repair</a>)';
+// argument(s): session_id, session_var, scripturl
+$txt['attach_dir_files_missing'] = 'Files Missing (<a href="%3$s?action=admin;area=manageattachments;sa=repair;%2$s=%1$s">Repair</a>)';
 $txt['attach_dir_unused'] = 'Unused';
 $txt['attach_dir_empty'] = 'Empty';
 $txt['attach_dir_ok'] = 'OK';
@@ -471,7 +473,7 @@ $txt['avatar_external_url_groups'] = 'Membergroups allowed to select an external
 $txt['avatar_select_permission'] = 'Select permissions for each group';
 $txt['avatar_download_external'] = 'Download avatar at given URL';
 $txt['option_specified_dir'] = 'Specific directory...';
-$txt['custom_avatar_dir_wrong'] = 'The Avatars directory is not valid. This will prevent avatars from working properly.';
+$txt['custom_avatar_dir_wrong'] = 'The Upload directory is not valid. This will prevent custom avatars from working properly.';
 $txt['custom_avatar_dir'] = 'Upload directory';
 $txt['custom_avatar_dir_desc'] = 'This should be a valid and writable directory, different from the server-stored directory.';
 $txt['custom_avatar_url'] = 'Upload URL';
@@ -535,7 +537,7 @@ $txt['generate_reports'] = 'Reports';
 
 $txt['update_available'] = 'Update available';
 $txt['update_message'] = 'You\'re using an outdated version of SMF, which contains some bugs which have since been fixed.
-	It is recommended that you <a href="#" id="update-link">update your forum</a> to the latest version as soon as possible. It only takes a minute!';
+	It is recommended that you <a href="#" id="update-link" class="bbc_link strong">update your forum</a> to the latest version as soon as possible. It only takes a minute!';
 
 $txt['manageposts'] = 'Posts and Topics';
 $txt['manageposts_title'] = 'Manage Posts and Topics';
@@ -725,6 +727,7 @@ $txt['hooks_field_hook_exists'] = 'Status';
 $txt['hooks_active'] = 'Exists';
 $txt['hooks_disabled'] = 'Disabled';
 $txt['hooks_missing'] = 'Not found';
+$txt['hooks_temp'] = 'Temporary';
 $txt['hooks_no_hooks'] = 'There are currently no hooks in the system.';
 $txt['hooks_button_remove'] = 'Remove';
 $txt['hooks_disable_instructions'] = 'Click on the status icon to enable or disable the hook';
@@ -732,6 +735,8 @@ $txt['hooks_disable_legend'] = 'Legend';
 $txt['hooks_disable_legend_exists'] = 'the hook exists and is active';
 $txt['hooks_disable_legend_disabled'] = 'the hook exists but has been disabled';
 $txt['hooks_disable_legend_missing'] = 'the hook has not been found';
+$txt['hooks_disable_legend_temp'] = 'the hook is temporary';
+$txt['hooks_disable_legend_temp_missing'] = 'temporary hook not found';
 $txt['hooks_reset_filter'] = 'No filter';
 
 $txt['board_perms_allow'] = 'Allow';

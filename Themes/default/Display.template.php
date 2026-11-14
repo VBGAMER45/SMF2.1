@@ -4,10 +4,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 /**
@@ -462,7 +462,7 @@ function template_main()
  */
 function template_single_post($message)
 {
-	global $context, $settings, $options, $txt, $scripturl, $modSettings;
+	global $context, $settings, $options, $txt, $scripturl, $modSettings, $user_info;
 
 	$ignoring = false;
 
@@ -532,6 +532,16 @@ function template_single_post($message)
 							</h4>
 							<ul class="user_info">';
 
+	// Show the member's custom title, if they have one.
+	if (!empty($message['member']['title']))
+		echo '
+								<li class="title">', $message['member']['title'], '</li>';
+
+	// Show the member's primary group (like 'Administrator') if they have one.
+	if (!empty($message['member']['group']))
+		echo '
+								<li class="membergroup">', $message['member']['group'], '</li>';
+
 	// Show the user's avatar.
 	if (!empty($modSettings['show_user_images']) && empty($options['show_no_avatars']) && !empty($message['member']['avatar']['image']))
 		echo '
@@ -545,24 +555,13 @@ function template_single_post($message)
 			echo '
 								<li class="custom ', $custom['col_name'], '">', $custom['value'], '</li>';
 
-	// Show the post group icons, but not for guests.
-	if (!$message['member']['is_guest'])
-		echo '
-								<li class="icons">', $message['member']['group_icons'], '</li>';
-
-	// Show the member's primary group (like 'Administrator') if they have one.
-	if (!empty($message['member']['group']))
-		echo '
-								<li class="membergroup">', $message['member']['group'], '</li>';
-
-	// Show the member's custom title, if they have one.
-	if (!empty($message['member']['title']))
-		echo '
-								<li class="title">', $message['member']['title'], '</li>';
-
 	// Don't show these things for guests.
 	if (!$message['member']['is_guest'])
 	{
+		// Show the post group icons
+		echo '
+								<li class="icons">', $message['member']['group_icons'], '</li>';
+
 		// Show the post group if and only if they have no other group or the option is on, and they are in a post group.
 		if ((empty($modSettings['hide_post_group']) || empty($message['member']['group'])) && !empty($message['member']['post_group']))
 			echo '
@@ -688,14 +687,13 @@ function template_single_post($message)
 								</div>';
 
 	echo '
-								<h5>
+								', !empty($message['counter']) ? '<span class="page_number floatright">#' . $message['counter'] . '</span>' : '', '
+								<div class="postinfo">
 									<span class="messageicon" ', ($message['icon_url'] === $settings['images_url'] . '/post/xx.png' && !$message['can_modify']) ? ' style="position: absolute; z-index: -1;"' : '', '>
 										<img src="', $message['icon_url'] . '" alt=""', $message['can_modify'] ? ' id="msg_icon_' . $message['id'] . '"' : '', '>
 									</span>
 									<a href="', $message['href'], '" rel="nofollow" title="', !empty($message['counter']) ? sprintf($txt['reply_number'], $message['counter'], ' - ') : '', $message['subject'], '" class="smalltext">', $message['time'], '</a>
-									<span class="page_number floatright">
-										', !empty($message['counter']) ? ' #' . $message['counter'] : '', ' ', '
-									</span>';
+									<span class="spacer"></span>';
 
 	// Show "<< Last Edit: Time by Person >>" if this post was edited. But we need the div even if it wasn't modified!
 	// Because we insert into it through AJAX and we don't want to stop themers moving it around if they so wish so they can put it where they want it.
@@ -708,7 +706,7 @@ function template_single_post($message)
 
 	echo '
 									</span>
-								</h5>
+								</div>
 								<div id="msg_', $message['id'], '_quick_mod"', $ignoring ? ' style="display:none;"' : '', '></div>
 							</div><!-- .keyinfo -->';
 
@@ -785,7 +783,7 @@ function template_single_post($message)
 											<a href="', $attachment['href'], ';image" id="link_', $attachment['id'], '" onclick="', $attachment['thumbnail']['javascript'], '"><img src="', $attachment['thumbnail']['href'], '" alt="" id="thumb_', $attachment['id'], '" class="atc_img"></a>';
 				else
 					echo '
-											<img src="' . $attachment['href'] . ';image" alt="" width="' . $attachment['width'] . '" height="' . $attachment['height'] . '" loading="lazy" class="atc_img">';
+											<img src="' . $attachment['href'] . ';image" alt="" loading="lazy" class="atc_img">';
 
 				echo '
 										</div><!-- .attachments_top -->';
@@ -847,6 +845,11 @@ function template_single_post($message)
 			}
 
 			$base .= (isset($txt[$base . $count])) ? $count : 'n';
+
+			// Remove link if no cookies; session reference won't work
+			// Also, don't show link to guests
+			if (empty($_COOKIE) || !empty($user_info['is_guest']))
+				$txt[$base] = preg_replace('~</?a\b[^>]*>~', '', $txt[$base]);
 
 			echo '
 									<li class="like_count smalltext">

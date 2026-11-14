@@ -5,10 +5,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2023 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.4
  */
 
 if (!defined('SMF'))
@@ -157,7 +157,9 @@ class fulltext_search extends search_api
 		}
 
 		$fulltextWord = count($subwords) === 1 ? $word : '"' . $word . '"';
-		$wordsSearch['indexed_words'][] = $fulltextWord;
+		// InnoDB full-text search does not support the use of multiple operators on a single search word, as in this example: '++apple'. Use of multiple operators on a single search word returns a syntax error to standard out. MyISAM full-text search successfully processes the same search, ignoring all operators except for the operator immediately adjacent to the search word.
+		// InnoDB full-text search only supports leading plus or minus signs. For example, InnoDB supports '+apple' but does not support 'apple+'. Specifying a trailing plus or minus sign causes InnoDB to report a syntax error.
+		$wordsSearch['indexed_words'][] = rtrim(rtrim(ltrim(ltrim($fulltextWord, '++'), '--'), '+'), '-');
 		if ($isExcluded)
 			$wordsExclude[] = $fulltextWord;
 	}
@@ -168,6 +170,18 @@ class fulltext_search extends search_api
 	public function indexedWordQuery(array $words, array $search_data)
 	{
 		global $modSettings, $smcFunc;
+
+		// Specify the function to search with. Regex is for word boundaries.
+		$is_search_regex = !empty($modSettings['search_match_words']) && !$search_data['no_regexp'];
+		$query_match_type = $is_search_regex ? 'RLIKE' : 'LIKE';
+		$word_boundary_wrapper = function(string $str) use ($smcFunc): string
+		{
+			return sprintf($smcFunc['db_supports_pcre'] ? '\\b%s\\b' : '[[:<:]]%s[[:>:]]', $str);
+		};
+		$escape_sql_regex = function(string $str): string
+		{
+			return addcslashes(preg_replace('/[\[\]$.+*?&^|{}()]/', '[$0]', $str), '\\\'');
+		};
 
 		$query_select = array(
 			'id_msg' => 'm.id_msg',
@@ -185,8 +199,15 @@ class fulltext_search extends search_api
 		if (empty($modSettings['search_simple_fulltext']))
 			foreach ($words['words'] as $regularWord)
 			{
-				$query_where[] = 'm.body' . (in_array($regularWord, $query_params['excluded_words']) ? ' NOT' : '') . (empty($modSettings['search_match_words']) || $search_data['no_regexp'] ? ' LIKE ' : ' RLIKE ') . '{string:complex_body_' . $count . '}';
-				$query_params['complex_body_' . $count++] = empty($modSettings['search_match_words']) || $search_data['no_regexp'] ? '%' . strtr($regularWord, array('_' => '\\_', '%' => '\\%')) . '%' : '[[:<:]]' . addcslashes(preg_replace(array('/([\[\]$.+*?|{}()])/'), array('[$1]'), $regularWord), '\\\'') . '[[:>:]]';
+				if (in_array($regularWord, $query_params['excluded_words']))
+					$query_where[] = 'm.body NOT ' . $query_match_type . ' {string:complex_body_' . $count . '}';
+				else
+					$query_where[] = 'm.body ' . $query_match_type . ' {string:complex_body_' . $count . '}';
+
+				if ($is_search_regex)
+					$query_params['complex_body_' . $count++] = $word_boundary_wrapper($escape_sql_regex($regularWord));
+				else
+					$query_params['complex_body_' . $count++] = '%' . $smcFunc['db_escape_wildcard_string']($regularWord) . '%';
 			}
 
 		if ($query_params['user_query'])
@@ -205,15 +226,23 @@ class fulltext_search extends search_api
 		if (!empty($query_params['excluded_phrases']) && empty($modSettings['search_force_index']))
 			foreach ($query_params['excluded_phrases'] as $phrase)
 			{
-				$query_where[] = 'subject NOT' . (empty($modSettings['search_match_words']) || $search_data['no_regexp'] ? ' LIKE ' : ' RLIKE ') . '{string:exclude_subject_phrase_' . $count . '}';
-				$query_params['exclude_subject_phrase_' . $count++] = empty($modSettings['search_match_words']) || $search_data['no_regexp'] ? '%' . strtr($phrase, array('_' => '\\_', '%' => '\\%')) . '%' : '[[:<:]]' . addcslashes(preg_replace(array('/([\[\]$.+*?|{}()])/'), array('[$1]'), $phrase), '\\\'') . '[[:>:]]';
+				$query_where[] = 'subject NOT ' . $query_match_type . ' {string:exclude_subject_phrase_' . $count . '}';
+
+				if ($is_search_regex)
+					$query_params['exclude_subject_phrase_' . $count++] = $word_boundary_wrapper($escape_sql_regex($phrase));
+				else
+					$query_params['exclude_subject_phrase_' . $count++] = '%' . $smcFunc['db_escape_wildcard_string']($phrase) . '%';
 			}
 		$count = 0;
 		if (!empty($query_params['excluded_subject_words']) && empty($modSettings['search_force_index']))
 			foreach ($query_params['excluded_subject_words'] as $excludedWord)
 			{
-				$query_where[] = 'subject NOT' . (empty($modSettings['search_match_words']) || $search_data['no_regexp'] ? ' LIKE ' : ' RLIKE ') . '{string:exclude_subject_words_' . $count . '}';
-				$query_params['exclude_subject_words_' . $count++] = empty($modSettings['search_match_words']) || $search_data['no_regexp'] ? '%' . strtr($excludedWord, array('_' => '\\_', '%' => '\\%')) . '%' : '[[:<:]]' . addcslashes(preg_replace(array('/([\[\]$.+*?|{}()])/'), array('[$1]'), $excludedWord), '\\\'') . '[[:>:]]';
+				$query_where[] = 'subject NOT ' . $query_match_type . ' {string:exclude_subject_words_' . $count . '}';
+
+				if ($is_search_regex)
+					$query_params['exclude_subject_words_' . $count++] = $word_boundary_wrapper($escape_sql_regex($excludedWord));
+				else
+					$query_params['exclude_subject_words_' . $count++] = '%' . $smcFunc['db_escape_wildcard_string']($excludedWord) . '%';
 			}
 
 		if (!empty($modSettings['search_simple_fulltext']))

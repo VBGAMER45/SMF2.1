@@ -8,10 +8,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2022 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.0
  */
 
 if (!defined('SMF'))
@@ -261,7 +261,7 @@ function PrintTopic()
 			'subject' => $row['subject'],
 			'member' => $row['poster_name'],
 			'time' => timeformat($row['poster_time'], false),
-			'timestamp' => forum_time(true, $row['poster_time']),
+			'timestamp' => $row['poster_time'],
 			'body' => parse_bbc($row['body'], 'print'),
 			'id_msg' => $row['id_msg'],
 		);

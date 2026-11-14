@@ -7,10 +7,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2025 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.7
  */
 
 if (!defined('SMF'))
@@ -30,6 +30,10 @@ function db_search_init()
 			'db_create_word_search' => 'smf_db_create_word_search',
 			'db_support_ignore' => true,
 		);
+
+	db_extend();
+	$version = $smcFunc['db_get_version']();
+	$smcFunc['db_supports_pcre'] = version_compare($version, strpos($version, 'MariaDB') !== false ? '10.0.5' : '8.0.4', '>=');
 }
 
 /**
@@ -66,7 +70,7 @@ function smf_db_create_word_search($size)
 			id_word {raw:size} unsigned NOT NULL default {string:string_zero},
 			id_msg int(10) unsigned NOT NULL default {string:string_zero},
 			PRIMARY KEY (id_word, id_msg)
-		) ENGINE=InnoDB',
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3 COLLATE=utf8mb3_general_ci',
 		array(
 			'string_zero' => '0',
 			'size' => $size,

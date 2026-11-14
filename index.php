@@ -14,19 +14,19 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 // Get everything started up...
 define('SMF', 1);
-define('SMF_VERSION', '2.1 RC4');
+define('SMF_VERSION', '2.1.8');
 define('SMF_FULL_VERSION', 'SMF ' . SMF_VERSION);
-define('SMF_SOFTWARE_YEAR', '2021');
+define('SMF_SOFTWARE_YEAR', '2026');
 
-define('JQUERY_VERSION', '3.6.0');
+define('JQUERY_VERSION', '3.6.3');
 define('POSTGRE_TITLE', 'PostgreSQL');
 define('MYSQL_TITLE', 'MySQL');
 define('SMF_USER_AGENT', 'Mozilla/5.0 (' . php_uname('s') . ' ' . php_uname('m') . ') AppleWebKit/605.1.15 (KHTML, like Gecko)  SMF/' . strtr(SMF_VERSION, ' ', '.'));
@@ -51,7 +51,7 @@ require_once(dirname(__FILE__) . '/Settings.php');
 error_reporting(!empty($db_show_debug) ? E_ALL : E_ALL & ~E_DEPRECATED);
 
 // Ensure there are no trailing slashes in these variables.
-foreach (array('boardurl', 'boarddir', 'sourcedir', 'packagesdir', 'taskddir', 'cachedir') as $variable)
+foreach (array('boardurl', 'boarddir', 'sourcedir', 'packagesdir', 'tasksdir', 'cachedir') as $variable)
 	if (!empty($GLOBALS[$variable]))
 		$GLOBALS[$variable] = rtrim($GLOBALS[$variable], "\\/");
 
@@ -77,6 +77,10 @@ require_once($sourcedir . '/Errors.php');
 require_once($sourcedir . '/Load.php');
 require_once($sourcedir . '/Security.php');
 
+// Ensure we don't trip over disabled internal functions
+if (version_compare(PHP_VERSION, '8.0.0', '>='))
+	require_once($sourcedir . '/Subs-Compat.php');
+
 // If $maintenance is set specifically to 2, then we're upgrading or something.
 if (!empty($maintenance) &&  2 === $maintenance)
 {
@@ -94,9 +98,11 @@ loadDatabase();
  *
  * @param string $class The fully-qualified class name.
  */
-spl_autoload_register(function ($class) use ($sourcedir)
-{
-	$classMap = array(
+spl_autoload_register(function($class) use ($sourcedir) {
+	global $modSettings;
+
+	static $hook_value = '';
+	static $class_map = array(
 		'ReCaptcha\\' => 'ReCaptcha/',
 		'MatthiasMullie\\Minify\\' => 'minify/src/',
 		'MatthiasMullie\\PathConverter\\' => 'minify/path-converter/src/',
@@ -104,9 +110,13 @@ spl_autoload_register(function ($class) use ($sourcedir)
 	);
 
 	// Do any third-party scripts want in on the fun?
-	call_integration_hook('integrate_autoload', array(&$classMap));
+	if ($hook_value !== (isset($modSettings['integrate_autoload']) ? $modSettings['integrate_autoload'] : ''))
+	{
+		call_integration_hook('integrate_autoload', array(&$class_map));
+		$hook_value = $modSettings['integrate_autoload'];
+	}
 
-	foreach ($classMap as $prefix => $dirName)
+	foreach ($class_map as $prefix => $dirname)
 	{
 		// does the class use the namespace prefix?
 		$len = strlen($prefix);
@@ -116,17 +126,17 @@ spl_autoload_register(function ($class) use ($sourcedir)
 		}
 
 		// get the relative class name
-		$relativeClass = substr($class, $len);
+		$relative_class = substr($class, $len);
 
 		// replace the namespace prefix with the base directory, replace namespace
 		// separators with directory separators in the relative class name, append
 		// with .php
-		$fileName = $dirName . strtr($relativeClass, '\\', '/') . '.php';
+		$filename = $dirname . strtr($relative_class, '\\', '/') . '.php';
 
 		// if the file exists, require it
-		if (file_exists($fileName = $sourcedir . '/' . $fileName))
+		if (file_exists($filename = $sourcedir . '/' . $filename))
 		{
-			require_once $fileName;
+			require_once $filename;
 
 			return;
 		}
@@ -156,13 +166,6 @@ if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS
 	die;
 }
 
-// Before we get carried away, are we doing a scheduled task? If so save CPU cycles by jumping out!
-if (isset($_GET['scheduled']))
-{
-	require_once($sourcedir . '/ScheduledTasks.php');
-	AutoTask();
-}
-
 // Check if compressed output is enabled, supported, and not already being done.
 if (!empty($modSettings['enableCompressedOutput']) && !headers_sent())
 {
@@ -179,6 +182,7 @@ if (!empty($modSettings['enableCompressedOutput']) && !headers_sent())
 
 // Register an error handler.
 set_error_handler('smf_error_handler');
+set_exception_handler('smf_exception_handler');
 
 // Start the session. (assuming it hasn't already been.)
 loadSession();
@@ -251,6 +255,7 @@ function smf_main()
 		'requestmembers' => true,
 		'smstats' => true,
 		'suggest' => true,
+		'uploadAttach' => true,
 		'verificationcode' => true,
 		'viewquery' => true,
 		'viewsmfile' => true,
@@ -258,18 +263,6 @@ function smf_main()
 		'.xml' => true,
 	);
 	call_integration_hook('integrate_pre_log_stats', array(&$no_stat_actions));
-
-	$should_log = !is_filtered_request($no_stat_actions, 'action');
-	if ($should_log)
-	{
-		// Log this user as online.
-		writeLog();
-
-		// Track forum statistics and hits...?
-		if (!empty($modSettings['hitStats']))
-			trackStats(array('hits' => '+'));
-	}
-	unset($no_stat_actions);
 
 	// Make sure that our scheduled tasks have been running as intended
 	check_cron();
@@ -288,9 +281,23 @@ function smf_main()
 			return 'InMaintenance';
 	}
 	// If guest access is off, a guest can only do one of the very few following actions.
-	elseif (empty($modSettings['allow_guestAccess']) && $user_info['is_guest'] && (!isset($_REQUEST['action']) || !in_array($_REQUEST['action'], array('coppa', 'login', 'login2', 'logintfa', 'reminder', 'activate', 'help', 'helpadmin', 'smstats', 'verificationcode', 'signup', 'signup2'))))
+	// An unsubscribe link is let through too, since it carries its own proof of who it is for, which is checked before anything is changed.
+	elseif (empty($modSettings['allow_guestAccess']) && $user_info['is_guest'] && (!isset($_REQUEST['action']) || !in_array($_REQUEST['action'], array('coppa', 'login', 'login2', 'logintfa', 'reminder', 'activate', 'help', 'helpadmin', 'smstats', 'verificationcode', 'signup', 'signup2'))) && !(isset($_REQUEST['action'], $_REQUEST['u'], $_REQUEST['token']) && in_array($_REQUEST['action'], array('notifyannouncements', 'notifyboard', 'notifytopic'))))
 		return 'KickGuest';
-	elseif (empty($_REQUEST['action']))
+
+	$should_log = !is_filtered_request($no_stat_actions, 'action');
+	if ($should_log)
+	{
+		// Log this user as online.
+		writeLog();
+
+		// Track forum statistics and hits...?
+		if (!empty($modSettings['hitStats']))
+			trackStats(array('hits' => '+'));
+	}
+	unset($no_stat_actions);
+
+	if (empty($_REQUEST['action']))
 	{
 		// Action and board are both empty... BoardIndex! Unless someone else wants to do something different.
 		if (empty($board) && empty($topic))

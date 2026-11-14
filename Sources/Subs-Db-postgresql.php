@@ -7,10 +7,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -52,7 +52,7 @@ function smf_db_initiate($db_server, $db_name, $db_user, $db_passwd, &$db_prefix
 			'db_server_info'            => 'smf_db_version',
 			'db_affected_rows'          => 'smf_db_affected_rows',
 			'db_transaction'            => 'smf_db_transaction',
-			'db_error'                  => 'pg_last_error',
+			'db_error'                  => 'smf_db_errormsg',
 			'db_select_db'              => 'smf_db_select_db',
 			'db_title'                  => POSTGRE_TITLE,
 			'db_sybase'                 => true,
@@ -174,7 +174,7 @@ function smf_db_replacement__callback($matches)
 		smf_db_error_backtrace('Invalid value inserted or no type specified.', '', E_USER_ERROR, __FILE__, __LINE__);
 
 	if ($matches[1] === 'literal')
-		return '\'' . pg_escape_string($matches[2]) . '\'';
+		return '\'' . pg_escape_string($connection, $matches[2]) . '\'';
 
 	if (!isset($values[$matches[2]]))
 		smf_db_error_backtrace('The database value you\'re trying to insert does not exist: ' . (isset($smcFunc['htmlspecialchars']) ? $smcFunc['htmlspecialchars']($matches[2]) : htmlspecialchars($matches[2])), '', E_USER_ERROR, __FILE__, __LINE__);
@@ -191,7 +191,7 @@ function smf_db_replacement__callback($matches)
 
 		case 'string':
 		case 'text':
-			return sprintf('\'%1$s\'', pg_escape_string($replacement));
+			return sprintf('\'%1$s\'', pg_escape_string($connection, $replacement));
 			break;
 
 		case 'array_int':
@@ -222,7 +222,7 @@ function smf_db_replacement__callback($matches)
 					smf_db_error_backtrace('Database error, given array of string values is empty. (' . $matches[2] . ')', '', E_USER_ERROR, __FILE__, __LINE__);
 
 				foreach ($replacement as $key => $value)
-					$replacement[$key] = sprintf('\'%1$s\'', pg_escape_string($value));
+					$replacement[$key] = sprintf('\'%1$s\'', pg_escape_string($connection, $value));
 
 				return implode(', ', $replacement);
 			}
@@ -260,7 +260,7 @@ function smf_db_replacement__callback($matches)
 			break;
 
 		case 'identifier':
-			return '"' . strtr($replacement, array('`' => '', '.' => '"."')) . '"';
+			return '"' . implode('"."', array_filter(explode('.', strtr($replacement, array('`' => ''))), 'strlen')) . '"';
 			break;
 
 		case 'raw':
@@ -272,7 +272,7 @@ function smf_db_replacement__callback($matches)
 				return 'null';
 			if (inet_pton($replacement) === false)
 				smf_db_error_backtrace('Wrong value type sent to the database. IPv4 or IPv6 expected.(' . $matches[2] . ')', '', E_USER_ERROR, __FILE__, __LINE__);
-			return sprintf('\'%1$s\'::inet', pg_escape_string($replacement));
+			return sprintf('\'%1$s\'::inet', pg_escape_string($connection, $replacement));
 
 		case 'array_inet':
 			if (is_array($replacement))
@@ -286,7 +286,7 @@ function smf_db_replacement__callback($matches)
 						$replacement[$key] = 'null';
 					if (!isValidIP($value))
 						smf_db_error_backtrace('Wrong value type sent to the database. IPv4 or IPv6 expected.(' . $matches[2] . ')', '', E_USER_ERROR, __FILE__, __LINE__);
-					$replacement[$key] = sprintf('\'%1$s\'::inet', pg_escape_string($value));
+					$replacement[$key] = sprintf('\'%1$s\'::inet', pg_escape_string($connection, $value));
 				}
 
 				return implode(', ', $replacement);
@@ -350,17 +350,14 @@ function smf_db_query($identifier, $db_string, $db_values = array(), $connection
 
 	// Special queries that need processing.
 	$replacements = array(
-		'insert_log_search_topics' => array(
-			'~NOT RLIKE~' => '!~',
-		),
-		'insert_log_search_results_no_index' => array(
-			'~NOT RLIKE~' => '!~',
-		),
-		'insert_log_search_results_subject' => array(
-			'~NOT RLIKE~' => '!~',
-		),
 		'profile_board_stats' => array(
 			'~COUNT\(\*\) \/ MAX\(b.num_posts\)~' => 'CAST(COUNT(*) AS DECIMAL) / CAST(b.num_posts AS DECIMAL)',
+		),
+		'random_mail' => array(
+			'~ORDER BY RAND\(\)~' => 'ORDER BY RANDOM()',
+		),
+		'ban_like' => array(
+			'/\bLIKE\b/' => 'ILIKE',
 		),
 	);
 
@@ -385,12 +382,14 @@ function smf_db_query($identifier, $db_string, $db_values = array(), $connection
 
 	// Comments that are allowed in a query are preg_removed.
 	static $allowed_comments_from = array(
+		'~\'\X*?\'~s',
 		'~\s+~s',
 		'~/\*!40001 SQL_NO_CACHE \*/~',
 		'~/\*!40000 USE INDEX \([A-Za-z\_]+?\) \*/~',
 		'~/\*!40100 ON DUPLICATE KEY UPDATE id_msg = \d+ \*/~',
 	);
 	static $allowed_comments_to = array(
+		' %s ',
 		' ',
 		'',
 		'',
@@ -402,7 +401,7 @@ function smf_db_query($identifier, $db_string, $db_values = array(), $connection
 	$db_replace_result = 0;
 
 	if (empty($modSettings['disableQueryCheck']) && strpos($db_string, '\'') !== false && empty($db_values['security_override']))
-		smf_db_error_backtrace('Hacking attempt...', 'Illegal character (\') used in query...', true, __FILE__, __LINE__);
+		smf_db_error_backtrace('No direct access...', 'Illegal character (\') used in query...', true, __FILE__, __LINE__);
 
 	if (empty($db_values['security_override']) && (!empty($db_values) || strpos($db_string, '{db_prefix}') !== false))
 	{
@@ -419,37 +418,8 @@ function smf_db_query($identifier, $db_string, $db_values = array(), $connection
 	// First, we clean strings out of the query, reduce whitespace, lowercase, and trim - so we can check it over.
 	if (empty($modSettings['disableQueryCheck']))
 	{
-		$clean = '';
-		$old_pos = 0;
-		$pos = -1;
-		// Remove the string escape for better runtime
-		$db_string_1 = str_replace('\'\'', '', $db_string);
-		while (true)
-		{
-			$pos = strpos($db_string_1, '\'', $pos + 1);
-			if ($pos === false)
-				break;
-			$clean .= substr($db_string_1, $old_pos, $pos - $old_pos);
-
-			while (true)
-			{
-				$pos1 = strpos($db_string_1, '\'', $pos + 1);
-				$pos2 = strpos($db_string_1, '\\', $pos + 1);
-				if ($pos1 === false)
-					break;
-				elseif ($pos2 === false || $pos2 > $pos1)
-				{
-					$pos = $pos1;
-					break;
-				}
-
-				$pos = $pos2 + 1;
-			}
-			$clean .= ' %s ';
-
-			$old_pos = $pos + 1;
-		}
-		$clean .= substr($db_string_1, $old_pos);
+		// Clear out escaped single quotes first, to make it simpler to ID & remove string literals
+		$clean = str_replace('\'\'', ' ', $db_string);
 		$clean = trim(strtolower(preg_replace($allowed_comments_from, $allowed_comments_to, $clean)));
 
 		// Comments?  We don't use comments in our queries, we leave 'em outside!
@@ -462,7 +432,7 @@ function smf_db_query($identifier, $db_string, $db_values = array(), $connection
 			$fail = true;
 
 		if (!empty($fail) && function_exists('log_error'))
-			smf_db_error_backtrace('Hacking attempt...', 'Hacking attempt...' . "\n" . $db_string, E_USER_ERROR, __FILE__, __LINE__);
+			smf_db_error_backtrace('No direct access...', 'No direct access...' . "\n" . $db_string, E_USER_ERROR, __FILE__, __LINE__);
 	}
 
 	// Set optimize stuff
@@ -574,17 +544,26 @@ function smf_db_insert_id($table, $field = null, $connection = null)
  */
 function smf_db_transaction($type = 'commit', $connection = null)
 {
-	global $db_connection;
+	global $db_connection, $inTransaction;
 
 	// Decide which connection to use
 	$connection = $connection === null ? $db_connection : $connection;
 
 	if ($type == 'begin')
+	{
+		$inTransaction = true;
 		return @pg_query($connection, 'BEGIN');
+	}
 	elseif ($type == 'rollback')
+	{
+		$inTransaction = false;
 		return @pg_query($connection, 'ROLLBACK');
+	}
 	elseif ($type == 'commit')
+	{
+		$inTransaction = false;
 		return @pg_query($connection, 'COMMIT');
+	}
 
 	return false;
 }
@@ -657,6 +636,9 @@ function smf_db_insert($method, $table, $columns, $data, $keys, $returnmode = 0,
 
 	if (empty($table) || empty($data))
 		return;
+
+	// Force method to lower case
+	$method = strtolower($method);
 
 	if (!is_array($data[array_rand($data)]))
 		$data = array($data);
@@ -770,7 +752,7 @@ function smf_db_insert($method, $table, $columns, $data, $keys, $returnmode = 0,
 				{
 					$with_returning = false;
 					loadLanguage('Errors');
-					trigger_error($txt['postgres_id_not_int'], E_USER_ERROR);
+					throw new \TypeError('postgres_id_not_int');
 				}
 			}
 		}
@@ -851,7 +833,10 @@ function smf_db_error_backtrace($error_message, $log_message = '', $error_type =
 		exit;
 	}
 	elseif ($error_type)
-		trigger_error($error_message . ($line !== null ? '<em>(' . basename($file) . '-' . $line . ')</em>' : ''), $error_type);
+	{
+		// Throw here as PHP 8.4 deprecated using trigger_error with E_USER_ERROR
+		throw new Exception($error_message . ($line !== null ? '<em>(' . basename($file) . '-' . $line . ')</em>' : ''), $error_type);
+	}
 	else
 		trigger_error($error_message . ($line !== null ? '<em>(' . basename($file) . '-' . $line . ')</em>' : ''));
 }
@@ -900,7 +885,7 @@ function smf_db_fetch_all($request)
  */
 function smf_db_error_insert($error_array)
 {
-	global $db_prefix, $db_connection, $db_persist;
+	global $db_prefix, $db_connection, $db_persist, $smcFunc, $inTransaction;
 	static $pg_error_data_prep;
 
 	// without database we can't do anything
@@ -909,6 +894,10 @@ function smf_db_error_insert($error_array)
 
 	if (filter_var($error_array[2], FILTER_VALIDATE_IP) === false)
 		$error_array[2] = null;
+
+	// If we are in a transaction, abort.
+	if (!empty($inTransaction))
+		smf_db_transaction('rollback');
 
 	if(empty($db_persist))
 	{ // without pooling
@@ -1024,6 +1013,22 @@ function smf_db_connect_errno()
 		$pg_connect_errno = '';
 
 	return $pg_connect_errno;
+}
+
+/**
+ * Wrapper to handle null errors
+ *
+ * @param null|PgSql\Connection $connection = null The connection to use (null to use $db_connection)
+ * @return string escaped string
+ */
+function smf_db_errormsg($connection = null)
+{
+	global $db_connection;
+
+	if ($connection === null && $db_connection === null)
+		return '';
+
+	return pg_last_error($connection === null ? $db_connection : $connection);
 }
 
 ?>

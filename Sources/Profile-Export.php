@@ -8,10 +8,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2025 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.5
  */
 
 if (!defined('SMF'))
@@ -493,6 +493,7 @@ function download_export_file($uid)
 		if (strtotime($modified_since) >= $mtime)
 		{
 			ob_end_clean();
+			header_remove('content-encoding');
 
 			// Answer the question - no, it hasn't been modified ;).
 			send_http_status(304);
@@ -505,6 +506,7 @@ function download_export_file($uid)
 	if (!empty($_SERVER['HTTP_IF_NONE_MATCH']) && strpos($_SERVER['HTTP_IF_NONE_MATCH'], $eTag) !== false)
 	{
 		ob_end_clean();
+		header_remove('content-encoding');
 
 		send_http_status(304);
 		exit;
@@ -571,6 +573,8 @@ function download_export_file($uid)
 		while (@ob_get_level() > 0)
 			@ob_end_clean();
 
+		header_remove('content-encoding');
+
 		// 40 kilobytes is a good-ish amount
 		$chunksize = 40 * 1024;
 		$bytes_sent = 0;
@@ -595,6 +599,8 @@ function download_export_file($uid)
 		// Forcibly end any output buffering going on.
 		while (@ob_get_level() > 0)
 			@ob_end_clean();
+
+		header_remove('content-encoding');
 
 		$fp = fopen($filepath, 'rb');
 		while (!feof($fp))
@@ -655,9 +661,6 @@ function export_attachment($uid)
 		send_http_status(403);
 		exit;
 	}
-
-	// We need the topic.
-	list ($_REQUEST['topic']) = $smcFunc['db_fetch_row']($request);
 	$smcFunc['db_free_result']($request);
 
 	// This doesn't count as a normal download.
@@ -665,6 +668,10 @@ function export_attachment($uid)
 
 	// Try to avoid collisons when attachment names are not unique.
 	$context['prepend_attachment_id'] = true;
+
+	// Allow access to their attachments even if they can't see the board.
+	// This is just like what we do with posts during export.
+	$context['attachment_allow_hidden_boards'] = true;
 
 	// We should now have what we need to serve the file.
 	require_once($sourcedir . DIRECTORY_SEPARATOR . 'ShowAttachments.php');
@@ -1808,6 +1815,8 @@ function export_load_css_js()
 			include_once(implode(DIRECTORY_SEPARATOR, array($sourcedir, 'minify', 'src', 'Exceptions', 'IOException.php')));
 
 			include_once(implode(DIRECTORY_SEPARATOR, array($sourcedir, 'minify', 'src', 'Minify.php')));
+			include_once(implode(DIRECTORY_SEPARATOR, array($sourcedir, 'minify', 'path-converter', 'src', 'ConverterInterface.php')));
+			include_once(implode(DIRECTORY_SEPARATOR, array($sourcedir, 'minify', 'path-converter', 'src', 'NoConverter.php')));
 			include_once(implode(DIRECTORY_SEPARATOR, array($sourcedir, 'minify', 'path-converter', 'src', 'Converter.php')));
 
 			include_once(implode(DIRECTORY_SEPARATOR, array($sourcedir, 'minify', 'src', 'CSS.php')));
@@ -1919,6 +1928,7 @@ function export_load_css_js()
 		'jpeg' => 'image/jpeg',
 		'tiff' => 'image/tiff',
 		'svg' => 'image/svg+xml',
+		'webp' => 'image/webp',
 	);
 
 	foreach (glob(implode(DIRECTORY_SEPARATOR, array($modSettings['smileys_dir'], $user_info['smiley_set'], '*.*'))) as $smiley_file)

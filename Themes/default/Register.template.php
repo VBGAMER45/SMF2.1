@@ -4,10 +4,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2025 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.5
  */
 
 /**
@@ -448,7 +448,7 @@ function template_verification_sound()
 		<meta charset="', $context['character_set'], '">
 		<title>', $txt['visual_verification_sound'], '</title>
 		<meta name="robots" content="noindex">
-		<link rel="stylesheet" href="', $settings['theme_url'], '/css/index', $context['theme_variant'], '.css', $context['browser_cache'], '">
+		', template_css(), '
 		<style>';
 
 	// Just show the help text and a "close window" link.
@@ -649,7 +649,7 @@ function template_edit_agreement()
 					<div class="information">
 						<span>', $context['agreement_info'], '</span>
 					</div>
-					<div class="righttext"><input type="submit" value="', $txt['save'], '" tabindex="', $context['tabindex']++, '" class="button" onclick="return resetAgreementConfirm()" />
+					<input type="submit" value="', $txt['save'], '" tabindex="', $context['tabindex']++, '" class="button" onclick="return resetAgreementConfirm()" />
 					<input type="hidden" name="agree_lang" value="', $context['current_agreement'], '">
 					<input type="hidden" name="sa" value="agreement">
 					<input type="hidden" name="', $context['session_var'], '" value="', $context['session_id'], '">

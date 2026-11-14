@@ -1,11 +1,11 @@
 <?php
-// Version: 2.1 RC4; Who
+// Version: 2.1.8; Who
 
 global $scripturl, $context;
 
 $txt['who_hidden'] = 'Nothing, or nothing you can see...';
-$txt['who_admin'] = 'Viewing the admin portal';
-$txt['who_moderate'] = 'Viewing the moderator portal';
+$txt['who_admin'] = 'Viewing the Administration Center';
+$txt['who_moderate'] = 'Viewing the Moderation Center';
 $txt['who_generic'] = 'Viewing the';
 $txt['who_unknown'] = 'Unknown Action';
 $txt['who_user'] = 'User';
@@ -19,7 +19,6 @@ $txt['who_show_all'] = 'Everyone';
 $txt['who_no_online_spiders'] = 'There are currently no spiders online.';
 $txt['who_no_online_guests'] = 'There are currently no guests online.';
 $txt['who_no_online_members'] = 'There are currently no members online.';
-$txt['who_guest_login'] = 'User has been taken to the login page.';
 
 $txt['whospider_login'] = 'Viewing the login page.';
 $txt['whospider_register'] = 'Viewing the registration page.';
@@ -187,7 +186,7 @@ $txt['credits_software_graphics'] = 'Software/Graphics';
 $txt['credits_software'] = 'Software';
 $txt['credits_graphics'] = 'Graphics';
 $txt['credits_fonts'] = 'Fonts';
-$txt['credits_groups_pm'] = 'Project Manager';
+$txt['credits_groups_pm'] = 'Project Management';
 $txt['credits_groups_dev'] = 'Developers';
 $txt['credits_groups_support'] = 'Support Specialists';
 $txt['credits_groups_customize'] = 'Customizers';
@@ -203,14 +202,14 @@ $txt['credits_groups_translation'] = 'English Translation';
 $txt['credits_groups_translators'] = 'Language Translators';
 $txt['credits_translators_message'] = 'Thank you for your efforts which make it possible for people all around the world to use SMF';
 $txt['credits_groups_consultants'] = 'Consulting Developers';
-$txt['credits_code_contributors'] = 'everyone who <a href="https://github.com/SimpleMachines/SMF2.1/graphs/contributors">contributed on GitHub</a>';
+$txt['credits_code_contributors'] = 'everyone who <a href="https://github.com/SimpleMachines/SMF/graphs/contributors">contributed on GitHub</a>';
 $txt['credits_groups_beta'] = 'Beta Testers';
 $txt['credits_beta_message'] = 'The invaluable few who tirelessly find bugs, provide feedback, and drive the developers crazier';
 $txt['credits_groups_founder'] = 'Founding Father of SMF';
 $txt['credits_groups_orignal_pm'] = 'Original Project Managers';
 $txt['credits_in_memoriam'] = 'In loving memory of';
 
-// List of people who have made more than a token contribution to this translation. (blank for English)
-$txt['translation_credits'] = array();
+// Comma separated list of people who have made more than a token contribution to this translation. Example: 'Alice "The Hammer" Smith, Bob Cratchit, Gandalf the Grey'. (Note: English version contains a single comma so that the string will be shown in CrowdIn.)
+$txt['translation_credits'] = ',';
 
 ?>

@@ -7,10 +7,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2025 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.7
  */
 
 if (!defined('SMF'))
@@ -39,16 +39,6 @@ function ModifyMembergroups()
 		'settings' => array('ModifyMembergroupsettings', 'admin_forum'),
 	);
 
-	// Default to sub action 'index' or 'settings' depending on permissions.
-	$_REQUEST['sa'] = isset($_REQUEST['sa']) && isset($subActions[$_REQUEST['sa']]) ? $_REQUEST['sa'] : (allowedTo('manage_membergroups') ? 'index' : 'settings');
-
-	// Is it elsewhere?
-	if (isset($subActions[$_REQUEST['sa']][2]))
-		require_once($sourcedir . '/' . $subActions[$_REQUEST['sa']][2]);
-
-	// Do the permission check, you might not be allowed her.
-	isAllowedTo($subActions[$_REQUEST['sa']][1]);
-
 	// Language and template stuff, the usual.
 	loadLanguage('ManageMembers');
 	loadTemplate('ManageMembergroups');
@@ -61,6 +51,16 @@ function ModifyMembergroups()
 	);
 
 	call_integration_hook('integrate_manage_membergroups', array(&$subActions));
+
+	// Default to sub action 'index' or 'settings' depending on permissions.
+	$_REQUEST['sa'] = isset($_REQUEST['sa']) && isset($subActions[$_REQUEST['sa']]) ? $_REQUEST['sa'] : (allowedTo('manage_membergroups') ? 'index' : 'settings');
+
+	// Is it elsewhere?
+	if (isset($subActions[$_REQUEST['sa']][2]))
+		require_once($sourcedir . '/' . $subActions[$_REQUEST['sa']][2]);
+
+	// Do the permission check, you might not be allowed here.
+	isAllowedTo($subActions[$_REQUEST['sa']][1]);
 
 	// Call the right function.
 	call_helper($subActions[$_REQUEST['sa']][0]);
@@ -173,7 +173,7 @@ function MembergroupIndex()
 		),
 		'additional_rows' => array(
 			array(
-				'position' => 'above_table_headers',
+				'position' => 'above_column_headers',
 				'value' => '<a class="button" href="' . $scripturl . '?action=admin;area=membergroups;sa=add;generalgroup">' . $txt['membergroups_add_group'] . '</a>',
 			),
 			array(
@@ -737,7 +737,7 @@ function EditMembergroup()
 
 		// Set variables to their proper value.
 		$_POST['max_messages'] = isset($_POST['max_messages']) ? (int) $_POST['max_messages'] : 0;
-		$_POST['min_posts'] = isset($_POST['min_posts']) && isset($_POST['group_type']) && $_POST['group_type'] == -1 && $_REQUEST['group'] > 3 ? abs($_POST['min_posts']) : ($_REQUEST['group'] == 4 ? 0 : -1);
+		$_POST['min_posts'] = isset($_POST['min_posts']) && isset($_POST['group_type']) && $_POST['group_type'] == -1 && $_REQUEST['group'] > 3 ? abs((int) $_POST['min_posts']) : ($_REQUEST['group'] == 4 ? 0 : -1);
 		$_POST['icons'] = (empty($_POST['icon_count']) || $_POST['icon_count'] < 0) ? '' : min((int) $_POST['icon_count'], 99) . '#' . $_POST['icon_image'];
 		$_POST['group_desc'] = isset($_POST['group_desc']) && ($_REQUEST['group'] == 1 || (isset($_POST['group_type']) && $_POST['group_type'] != -1)) ? trim($_POST['group_desc']) : '';
 		$_POST['group_type'] = !isset($_POST['group_type']) || $_POST['group_type'] < 0 || $_POST['group_type'] > 3 || ($_POST['group_type'] == 1 && !allowedTo('admin_forum')) ? 0 : (int) $_POST['group_type'];
@@ -765,7 +765,7 @@ function EditMembergroup()
 				'group_name' => $smcFunc['htmlspecialchars']($_POST['group_name']),
 				'online_color' => $_POST['online_color'],
 				'icons' => $_POST['icons'],
-				'group_desc' => $_POST['group_desc'],
+				'group_desc' => $smcFunc['normalize']($_POST['group_desc']),
 				'tfa_required' => $_POST['group_tfa_force'],
 			)
 		);
@@ -1047,7 +1047,9 @@ function EditMembergroup()
 		}
 
 		// There might have been some post group changes.
-		updateStats('postgroups');
+		if ($_POST['min_posts'] != -1)
+			updateStats('postgroups');
+
 		// We've definitely changed some group stuff.
 		updateSettings(array(
 			'settings_updated' => time(),
@@ -1168,7 +1170,7 @@ function EditMembergroup()
 	}
 
 	// Get a list of all the image formats we can select.
-	$imageExts = array('png', 'jpg', 'jpeg', 'bmp', 'gif');
+	$imageExts = array('png', 'jpg', 'jpeg', 'bmp', 'gif', 'webp');
 
 	// Scan the directory.
 	$context['possible_icons'] = array();

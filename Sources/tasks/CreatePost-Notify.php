@@ -9,10 +9,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2025 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.7
  */
 
 /**
@@ -84,7 +84,7 @@ class CreatePost_Notify_Background extends SMF_BackgroundTask
 	 */
 	public function execute()
 	{
-		global $smcFunc, $sourcedir, $scripturl, $language, $modSettings, $user_info;
+		global $smcFunc, $sourcedir, $scripturl, $language, $modSettings, $user_info, $txt;
 
 		require_once($sourcedir . '/Subs-Post.php');
 		require_once($sourcedir . '/Mentions.php');
@@ -98,6 +98,19 @@ class CreatePost_Notify_Background extends SMF_BackgroundTask
 		$posterOptions = &$this->_details['posterOptions'];
 		$type = &$this->_details['type'];
 
+		// Board id is required; if missing, log an error and return
+		if (!isset($topicOptions['board']))
+		{
+			require_once($sourcedir . '/Errors.php');
+			loadLanguage('Errors');
+			log_error($txt['missing_board_id'], 'general', __FILE__, __LINE__);
+			return true;
+		}
+
+		// poster_time not always supplied, but used throughout
+		if (empty($msgOptions['poster_time']))
+			$msgOptions['poster_time'] = 0;
+
 		$this->mention_mail_time = $msgOptions['poster_time'] + self::MENTION_DELAY * 60;
 
 		// We need some more info about the quoted and mentioned members.
@@ -106,6 +119,22 @@ class CreatePost_Notify_Background extends SMF_BackgroundTask
 		if (!empty($msgOptions['mentioned_members']))
 			$this->members['mentioned'] = Mentions::getMentionsByContent('msg', $msgOptions['id'], array_keys($msgOptions['mentioned_members']));
 
+		$group_permissions = array(
+			'allowed' => array(),
+			'denied' => array(),
+		);
+		$request = $smcFunc['db_query']('', '
+			SELECT id_group, deny
+			FROM {db_prefix}board_permissions_view
+			WHERE id_board = {int:current_board}',
+			array(
+				'current_board' => $topicOptions['board'],
+			)
+		);
+		while (list ($id_group, $deny) = $smcFunc['db_fetch_row']($request))
+			$group_permissions[$deny === '0' ? 'allowed' : 'denied'][] = $id_group;
+		$smcFunc['db_free_result']($request);
+
 		// Find the people interested in receiving notifications for this topic
 		$request = $smcFunc['db_query']('', '
 			SELECT
@@ -113,13 +142,15 @@ class CreatePost_Notify_Background extends SMF_BackgroundTask
 				mem.email_address, mem.lngfile, mem.pm_ignore_list,
 				mem.id_group, mem.id_post_group, mem.additional_groups,
 				mem.time_format, mem.time_offset, mem.timezone,
-				b.member_groups, t.id_member_started, t.id_member_updated
+				t.id_member_started, t.id_member_updated
 			FROM {db_prefix}log_notify AS ln
 				INNER JOIN {db_prefix}members AS mem ON (ln.id_member = mem.id_member)
 				LEFT JOIN {db_prefix}topics AS t ON (t.id_topic = ln.id_topic)
-				LEFT JOIN {db_prefix}boards AS b ON (b.id_board = ln.id_board OR b.id_board = t.id_board)
-			WHERE ln.id_member != {int:member}
-				AND (ln.id_topic = {int:topic} OR ln.id_board = {int:board})',
+			WHERE
+				(' . (!empty($topicOptions['board']) ? 'ln.id_board = {int:board}' : '')
+				 . (!empty($topicOptions['board']) && !empty($topicOptions['id']) ? ' or ' : '')
+				 . (!empty($topicOptions['id']) ? 'ln.id_topic = {int:topic}' : '') . ')
+				AND ln.id_member != {int:member}',
 			array(
 				'member' => $posterOptions['id'],
 				'topic' => $topicOptions['id'],
@@ -131,14 +162,24 @@ class CreatePost_Notify_Background extends SMF_BackgroundTask
 			// Skip members who aren't allowed to see this board
 			$groups = array_merge(array($row['id_group'], $row['id_post_group']), (empty($row['additional_groups']) ? array() : explode(',', $row['additional_groups'])));
 
-			$allowed_groups = explode(',', $row['member_groups']);
-
-			if (!in_array(1, $groups) && count(array_intersect($groups, $allowed_groups)) == 0)
+			$is_denied = array_intersect($group_permissions['denied'], $groups) != array();
+			if (!in_array(1, $groups) && ($is_denied || array_intersect($groups, $group_permissions['allowed']) == array()))
 				continue;
 			else
 			{
 				$row['groups'] = $groups;
 				unset($row['id_group'], $row['id_post_group'], $row['additional_groups']);
+			}
+
+			// If this user subscribes both to the topic and the board there will be two records returned.
+			// Copy board/topic data to the new record or it will be lost.
+			if (!empty($this->members['watching'][$row['id_member']])) {
+				if ($this->members['watching'][$row['id_member']]['id_board'] > 0) {
+					$row['id_board'] = $this->members['watching'][$row['id_member']]['id_board'];
+				}
+				if ($this->members['watching'][$row['id_member']]['id_topic'] > 0) {
+					$row['id_topic'] = $this->members['watching'][$row['id_member']]['id_topic'];
+				}
 			}
 
 			$this->members['watching'][$row['id_member']] = $row;
@@ -148,27 +189,17 @@ class CreatePost_Notify_Background extends SMF_BackgroundTask
 		// Filter out mentioned and quoted members who can't see this board.
 		if (!empty($this->members['mentioned']) || !empty($this->members['quoted']))
 		{
-			// This won't be set yet if no one is watching this board or topic.
-			if (!isset($allowed_groups))
-			{
-				$request = $smcFunc['db_query']('', '
-					SELECT member_groups
-					FROM {db_prefix}boards
-					WHERE id_board = {int:board}',
-					array(
-						'board' => $topicOptions['board'],
-					)
-				);
-				list($allowed_groups) = $smcFunc['db_fetch_row']($request);
-				$smcFunc['db_free_result']($request);
-				$allowed_groups = explode(',', $allowed_groups);
-			}
-
 			foreach (array('mentioned', 'quoted') as $member_type)
 			{
 				foreach ($this->members[$member_type] as $member_id => $member_data)
 				{
-					if (!in_array(1, $member_data['groups']) && count(array_intersect($member_data['groups'], $allowed_groups)) == 0)
+					// The member receiving the alert has ignored the member mentioning them.
+					if (!empty($member_data['mentioned_by']['ignored'])) {
+						unset($this->members[$member_type][$member_id], $msgOptions[$member_type . '_members'][$member_id]);
+					}
+
+					$is_denied = array_intersect($group_permissions['denied'], $member_data['groups']) != array();
+					if (!in_array(1, $member_data['groups']) && ($is_denied || array_intersect($member_data['groups'], $group_permissions['allowed']) == array()))
 						unset($this->members[$member_type][$member_id], $msgOptions[$member_type . '_members'][$member_id]);
 				}
 			}
@@ -182,10 +213,6 @@ class CreatePost_Notify_Background extends SMF_BackgroundTask
 		// Modified post, or dealing with delayed mention and quote notifications.
 		if ($type == 'edit' || !empty($this->_details['respawns']))
 		{
-			// Filter out members who have already been notified about this post's topic
-			$this->members['quoted'] = array_intersect_key($this->members['quoted'], $unnotified);
-			$this->members['mentioned'] = array_intersect_key($this->members['mentioned'], $unnotified);
-
 			// Notifications about modified posts only go to members who were mentioned or quoted
 			$this->members['watching'] = $type == 'edit' ? array(): $unnotified;
 
@@ -224,11 +251,11 @@ class CreatePost_Notify_Background extends SMF_BackgroundTask
 
 					// If it was modified again while we weren't looking, bail out.
 					// A future instance of this task will take care of it instead.
-					if ($msgOptions['modify_time'] < $real_modified_time)
+					if ((!empty($msgOptions['modify_time']) ? $msgOptions['modify_time'] : $msgOptions['poster_time']) < $real_modified_time)
 						return true;
 				}
 
-				$this->mention_mail_time = $msgOptions['modify_time'] + self::MENTION_DELAY * 60;
+				$this->mention_mail_time = (!empty($msgOptions['modify_time']) ? $msgOptions['modify_time'] : $msgOptions['poster_time']) + self::MENTION_DELAY * 60;
 			}
 		}
 
@@ -271,7 +298,9 @@ class CreatePost_Notify_Background extends SMF_BackgroundTask
 			$smcFunc['db_query']('', '
 				UPDATE {db_prefix}log_notify
 				SET sent = {int:is_sent}
-				WHERE (id_topic = {int:topic} OR id_board = {int:board})
+				WHERE (' . (!empty($topicOptions['board']) ? 'id_board = {int:board}' : '')
+				 . (!empty($topicOptions['board']) && !empty($topicOptions['id']) ? ' or ' : '')
+				 . (!empty($topicOptions['id']) ? 'id_topic = {int:topic}' : '') . ')
 					AND id_member IN ({array_int:members})',
 				array(
 					'topic' => $topicOptions['id'],
@@ -428,15 +457,7 @@ class CreatePost_Notify_Background extends SMF_BackgroundTask
 				array()
 			);
 
-			$new_alerts = array();
-			foreach ($this->alert_rows as $row)
-			{
-				$group = implode(' ', array($row['content_type'], $row['content_id'], $row['content_action']));
-				$new_alerts[$group] = $row['id_member'];
-			}
-
-			foreach ($new_alerts as $member_ids)
-				updateMemberData($member_ids, array('alerts' => '+'));
+			updateMemberData(array_column($this->alert_rows, 'id_member'), array('alerts' => '+'));
 		}
 	}
 
@@ -453,7 +474,10 @@ class CreatePost_Notify_Background extends SMF_BackgroundTask
 		$posterOptions = &$this->_details['posterOptions'];
 		$type = &$this->_details['type'];
 
-		$members_info = $this->getMinUserInfo(array_keys($this->members['watching']));
+		$user_ids = array_keys($this->members['watching']);
+		if (!in_array($posterOptions['id'], $user_ids))
+			$user_ids[] = $posterOptions['id'];
+		$members_info = $this->getMinUserInfo($user_ids);
 
 		$parsed_message = array();
 		foreach ($this->members['watching'] as $member_id => $member_data)
@@ -510,7 +534,7 @@ class CreatePost_Notify_Background extends SMF_BackgroundTask
 					if (empty($modSettings['disallow_sendBody']) && !empty($this->prefs[$member_id]['msg_receive_body']))
 						$message_type .= '_body';
 
-					if (!empty($frequency))
+					if ($frequency == self::FREQUENCY_FIRST_UNREAD_MSG)
 						$message_type .= '_once';
 				}
 
@@ -525,13 +549,12 @@ class CreatePost_Notify_Background extends SMF_BackgroundTask
 
 				$content_type = 'board';
 
-				$message_type = !empty($frequency) ? 'notify_boards_once' : 'notify_boards';
+				$message_type = !empty($frequency) && $frequency == 2 ? 'notify_boards_once' : 'notify_boards';
 
 				if (empty($modSettings['disallow_sendBody']) && !empty($this->prefs[$member_id]['msg_receive_body']))
 					$message_type .= '_body';
 			}
-
-			// If neither of the above, this might be a redundant row due to the OR clause in our SQL query, skip
+			// No notification request for this user for this board/topic.
 			else
 				continue;
 
@@ -597,10 +620,10 @@ class CreatePost_Notify_Background extends SMF_BackgroundTask
 
 				$replacements = array(
 					'TOPICSUBJECT' => $parsed_message[$localization]['subject'],
-					'POSTERNAME' => un_htmlspecialchars($posterOptions['name']),
+					'POSTERNAME' => un_htmlspecialchars(isset($members_info[$posterOptions['id']]['name']) ? $members_info[$posterOptions['id']]['name'] : $posterOptions['name']),
 					'TOPICLINK' => $scripturl . '?topic=' . $topicOptions['id'] . '.new#new',
 					'MESSAGE' => $parsed_message[$localization]['body'],
-					'UNSUBSCRIBELINK' => $scripturl . '?action=notify' . $content_type . ';' . $content_type . '=' . $itemID . ';sa=off;u=' . $member_data['id_member'] . ';token=' . $token,
+					'UNSUBSCRIBELINK' => $scripturl . '?action=notify' . $content_type . ';item=' . $itemID . ';sa=off;u=' . $member_data['id_member'] . ';token=' . $token,
 				);
 
 				$emaildata = loadEmailTemplate($message_type, $replacements, $member_data['lngfile']);
@@ -623,6 +646,8 @@ class CreatePost_Notify_Background extends SMF_BackgroundTask
 
 		$msgOptions = &$this->_details['msgOptions'];
 		$posterOptions = &$this->_details['posterOptions'];
+
+		$members_info = $this->getMinUserInfo([$posterOptions['id']]);
 
 		foreach ($this->members['quoted'] as $member_id => $member_data)
 		{
@@ -663,11 +688,11 @@ class CreatePost_Notify_Background extends SMF_BackgroundTask
 				// Don't want an email, so forget this member in any respawned tasks.
 				unset($msgOptions['quoted_members'][$member_id]);
 			}
-			elseif (TIME_START >= $this->mention_mail_time || in_array($member_id, $this->members['watched']))
+			elseif (TIME_START >= $this->mention_mail_time || in_array($member_id, $this->members['watching']))
 			{
 				$replacements = array(
 					'CONTENTSUBJECT' => $msgOptions['subject'],
-					'QUOTENAME' => $posterOptions['name'],
+					'QUOTENAME' => un_htmlspecialchars(isset($members_info[$posterOptions['id']]['name']) ? $members_info[$posterOptions['id']]['name'] : $posterOptions['name']),
 					'MEMBERNAME' => $member_data['real_name'],
 					'CONTENTLINK' => $scripturl . '?msg=' . $msgOptions['id'],
 				);
@@ -738,7 +763,7 @@ class CreatePost_Notify_Background extends SMF_BackgroundTask
 				// Don't want an email, so forget this member in any respawned tasks.
 				unset($msgOptions['mentioned_members'][$member_id]);
 			}
-			elseif (TIME_START >= $this->mention_mail_time || in_array($member_id, $this->members['watched']))
+			elseif (TIME_START >= $this->mention_mail_time || in_array($member_id, $this->members['watching']))
 			{
 				$replacements = array(
 					'CONTENTSUBJECT' => $msgOptions['subject'],

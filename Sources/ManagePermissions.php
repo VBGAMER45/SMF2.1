@@ -7,10 +7,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -44,9 +44,6 @@ function ModifyPermissions()
 		'settings' => array('GeneralPermissionSettings', 'admin_forum'),
 	);
 
-	$_REQUEST['sa'] = isset($_REQUEST['sa']) && isset($subActions[$_REQUEST['sa']]) && empty($subActions[$_REQUEST['sa']]['disabled']) ? $_REQUEST['sa'] : (allowedTo('manage_permissions') ? 'index' : 'settings');
-	isAllowedTo($subActions[$_REQUEST['sa']][1]);
-
 	// Create the tabs for the template.
 	$context[$context['admin_menu_name']]['tab_data'] = array(
 		'title' => $txt['permissions_title'],
@@ -72,6 +69,10 @@ function ModifyPermissions()
 	);
 
 	call_integration_hook('integrate_manage_permissions', array(&$subActions));
+
+	$_REQUEST['sa'] = isset($_REQUEST['sa']) && isset($subActions[$_REQUEST['sa']]) && empty($subActions[$_REQUEST['sa']]['disabled']) ? $_REQUEST['sa'] : (allowedTo('manage_permissions') ? 'index' : 'settings');
+
+	isAllowedTo($subActions[$_REQUEST['sa']][1]);
 
 	call_helper($subActions[$_REQUEST['sa']][0]);
 }
@@ -1156,6 +1157,7 @@ function setPermissionLevel($level, $group, $profile = 'null')
 		'profile_displayed_name',
 		'profile_upload_avatar',
 		'profile_remote_avatar',
+		'profile_gravatar',
 		'profile_remove_own',
 		'report_user',
 	));
@@ -1505,6 +1507,7 @@ function loadAllPermissions()
 			'profile_server_avatar' => array(false, 'profile'),
 			'profile_upload_avatar' => array(false, 'profile'),
 			'profile_remote_avatar' => array(false, 'profile'),
+			'profile_gravatar' => array(false, 'profile'),
 			'report_user' => array(false, 'profile'),
 			'profile_identity' => array(true, 'profile_account'),
 			'profile_displayed_name' => array(true, 'profile_account'),
@@ -1519,8 +1522,8 @@ function loadAllPermissions()
 			'approve_posts' => array(false, 'general_board'),
 			'post_new' => array(false, 'topic'),
 			'post_unapproved_topics' => array(false, 'topic'),
-			'post_unapproved_replies' => array(true, 'topic'),
 			'post_reply' => array(true, 'topic'),
+			'post_unapproved_replies' => array(true, 'topic'),
 			'post_draft' => array(false, 'topic'),
 			'merge_any' => array(false, 'topic'),
 			'split_any' => array(false, 'topic'),
@@ -1619,7 +1622,7 @@ function loadAllPermissions()
 		$hiddenPermissions[] = 'post_attachment';
 	}
 
-	// Hide Likes/Mentions permissions...
+	// Hide Likes/Mentions/Gravatar permissions...
 	if (empty($modSettings['enable_likes']))
 	{
 		$hiddenPermissions[] = 'likes_like';
@@ -1627,6 +1630,10 @@ function loadAllPermissions()
 	if (empty($modSettings['enable_mentions']))
 	{
 		$hiddenPermissions[] = 'mention';
+	}
+	if (empty($modSettings['gravatarEnabled']))
+	{
+		$hiddenPermissions[] = 'profile_gravatar';
 	}
 
 	// Provide a practical way to modify permissions.
@@ -1815,7 +1822,8 @@ function init_inline_permissions($permissions, $excluded_groups = array())
 					'status' => 'off',
 				);
 
-		$context[$row['permission']][$row['id_group']]['status'] = empty($row['status']) ? 'deny' : ($row['status'] == 1 ? 'on' : 'off');
+		if (isset($row['permission']))
+			$context[$row['permission']][$row['id_group']]['status'] = empty($row['status']) ? 'deny' : ($row['status'] == 1 ? 'on' : 'off');
 	}
 	$smcFunc['db_free_result']($request);
 
@@ -2335,7 +2343,6 @@ function loadIllegalGuestPermissions()
 		'poll_edit',
 		'poll_lock',
 		'poll_remove',
-		'post_autosave_draft',
 		'post_draft',
 		'profile_blurb',
 		'profile_displayed_name',
@@ -2347,10 +2354,11 @@ function loadIllegalGuestPermissions()
 		'profile_remove',
 		'profile_remote_avatar',
 		'profile_server_avatar',
+		'profile_gravatar',
 		'profile_signature',
 		'profile_title',
 		'profile_upload_avatar',
-		'profile_warning',
+		'view_warning_own',
 		'remove',
 		'report_any',
 		'report_user',

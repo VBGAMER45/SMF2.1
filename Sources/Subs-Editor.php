@@ -8,10 +8,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2025 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.7
  */
 
 if (!defined('SMF'))
@@ -446,7 +446,7 @@ function html_to_bbc($text)
 	if (connection_aborted() && $context['server']['is_apache'])
 		@apache_reset_timeout();
 
-	if (count($parts = preg_split('~<(/?)(li|ol|ul)([^>]*)>~i', $text, null, PREG_SPLIT_DELIM_CAPTURE)) > 1)
+	if (count($parts = preg_split('~<(/?)(li|ol|ul)([^>]*)>~i', $text, -1, PREG_SPLIT_DELIM_CAPTURE)) > 1)
 	{
 		// A toggle that dermines whether we're directly under a <ol> or <ul>.
 		$inList = false;
@@ -679,7 +679,7 @@ function html_to_bbc($text)
 		if (!empty($src))
 		{
 			// Attempt to fix the path in case it's not present.
-			if (preg_match('~^https?://~i', $src) === 0 && is_array($parsedURL = parse_url($scripturl)) && isset($parsedURL['host']))
+			if (preg_match('~^https?://~i', $src) === 0 && is_array($parsedURL = parse_iri($scripturl)) && isset($parsedURL['host']))
 			{
 				$baseURL = (isset($parsedURL['scheme']) ? $parsedURL['scheme'] : 'http') . '://' . $parsedURL['host'] . (empty($parsedURL['port']) ? '' : ':' . $parsedURL['port']);
 
@@ -902,7 +902,7 @@ function html_to_bbc($text)
 				}
 
 				// No http(s), so attempt to fix this potential relative URL.
-				elseif (preg_match('~^https?://~i', $href) === 0 && is_array($parsedURL = parse_url($scripturl)) && isset($parsedURL['host']))
+				elseif (preg_match('~^https?://~i', $href) === 0 && is_array($parsedURL = parse_iri($scripturl)) && isset($parsedURL['host']))
 				{
 					$baseURL = (isset($parsedURL['scheme']) ? $parsedURL['scheme'] : 'http') . '://' . $parsedURL['host'] . (empty($parsedURL['port']) ? '' : ':' . $parsedURL['port']);
 
@@ -916,8 +916,8 @@ function html_to_bbc($text)
 			// External URL?
 			if ($attrib == 'target' && $tag_type == 'url')
 			{
-				if (trim($value) == '_blank')
-					$tag_type == 'iurl';
+				if (trim($value) != '_blank')
+					$tag_type = 'iurl';
 			}
 		}
 
@@ -1289,7 +1289,7 @@ function legalise_bbc($text)
 								break;
 
 							// Still a block tag was open not equal to this tag.
-							$addClosingTags[] = $element['type'];
+							$addClosingTags[] = $element;
 						}
 
 						if (!empty($addClosingTags))
@@ -1759,6 +1759,9 @@ function create_control_richedit($editorOptions)
 			'hr' => 'horizontalrule',
 		);
 
+		// Define this here so mods can add to it via the hook.
+		$context['disabled_tags'] = array();
+
 		// Allow mods to modify BBC buttons.
 		// Note: passing the array here is not necessary and is deprecated, but it is kept for backward compatibility with 2.0
 		call_integration_hook('integrate_bbc_buttons', array(&$context['bbc_tags'], &$editor_tag_map));
@@ -1776,6 +1779,12 @@ function create_control_richedit($editorOptions)
 			{
 				$context['disabled_tags']['bulletlist'] = true;
 				$context['disabled_tags']['orderedlist'] = true;
+			}
+
+			if ($tag === 'float')
+			{
+				$context['disabled_tags']['floatleft'] = true;
+				$context['disabled_tags']['floatright'] = true;
 			}
 
 			foreach ($editor_tag_map as $thisTag => $tagNameBBC)
@@ -1798,7 +1807,12 @@ function create_control_richedit($editorOptions)
 
 			foreach ($tagRow as $tag)
 			{
-				if ((!empty($tag['code'])) && empty($context['disabled_tags'][$tag['code']]))
+				if (empty($tag['code']))
+				{
+					$context['bbc_toolbar'][$row][] = implode(',', $tagsRow);
+					$tagsRow = array();
+				}
+				elseif (empty($context['disabled_tags'][$tag['code']]))
 				{
 					$tagsRow[] = $tag['code'];
 
@@ -1828,11 +1842,6 @@ function create_control_richedit($editorOptions)
 
 					$context['bbcodes_handlers'] .= '
 						});';
-				}
-				else
-				{
-					$context['bbc_toolbar'][$row][] = implode(',', $tagsRow);
-					$tagsRow = array();
 				}
 			}
 
@@ -2069,7 +2078,7 @@ function create_control_verification(&$verificationOptions, $do_test = false)
 				$id_question = $row['id_question'];
 				unset ($row['id_question']);
 				// Make them all lowercase. We can't directly use $smcFunc['strtolower'] with array_walk, so do it manually, eh?
-				$row['answers'] = $smcFunc['json_decode']($row['answers'], true);
+				$row['answers'] = (array) $smcFunc['json_decode']($row['answers'], true);
 				foreach ($row['answers'] as $k => $v)
 					$row['answers'][$k] = $smcFunc['strtolower']($v);
 
@@ -2101,9 +2110,6 @@ function create_control_verification(&$verificationOptions, $do_test = false)
 	{
 		// This cannot happen!
 		if (!isset($_SESSION[$verificationOptions['id'] . '_vv']['count']))
-			fatal_lang_error('no_access', false);
-		// ... nor this!
-		if ($thisVerification['number_questions'] && (!isset($_SESSION[$verificationOptions['id'] . '_vv']['q']) || !isset($_REQUEST[$verificationOptions['id'] . '_vv']['q'])))
 			fatal_lang_error('no_access', false);
 		// Hmm, it's requested but not actually declared. This shouldn't happen.
 		if ($thisVerification['empty_field'] && empty($_SESSION[$verificationOptions['id'] . '_vv']['empty_field']))
@@ -2147,7 +2153,7 @@ function create_control_verification(&$verificationOptions, $do_test = false)
 				// Second, is their answer in the list of possible answers?
 				else
 				{
-					$given_answer = trim($smcFunc['htmlspecialchars'](strtolower($_REQUEST[$verificationOptions['id'] . '_vv']['q'][$q])));
+					$given_answer = trim($smcFunc['htmlspecialchars']($smcFunc['strtolower']($_REQUEST[$verificationOptions['id'] . '_vv']['q'][$q])));
 					if (!in_array($given_answer, $modSettings['question_id_cache']['questions'][$q]['answers']))
 						$incorrectQuestions[] = $q;
 				}
@@ -2258,6 +2264,10 @@ function create_control_verification(&$verificationOptions, $do_test = false)
 		{
 			// Bit of a shortcut this.
 			$row = &$modSettings['question_id_cache']['questions'][$q];
+
+			if (empty($row['question']))
+				continue;
+
 			$thisVerification['questions'][] = array(
 				'id' => $q,
 				'q' => parse_bbc($row['question']),
@@ -2464,7 +2474,7 @@ function AutoSuggest_Search_SMFVersions()
 
 	// Just in case we don't have ANYthing.
 	if (empty($versions))
-		$versions = array('SMF 2.0');
+		$versions = array(SMF_FULL_VERSION);
 
 	foreach ($versions as $id => $version)
 		if (strpos($version, strtoupper($_REQUEST['search'])) !== false)

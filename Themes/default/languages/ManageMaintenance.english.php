@@ -1,5 +1,5 @@
 <?php
-// Version: 2.1 RC4; ManageMaintenance
+// Version: 2.1.7; ManageMaintenance
 
 $txt['repair_zero_ids'] = 'Found topics and/or messages with topic or message IDs of 0.';
 $txt['repair_missing_topics'] = 'Message #%1$d is in non-existent topic #%2$d.';
@@ -154,15 +154,10 @@ $txt['maintain_optimize'] = 'Optimize all tables';
 $txt['maintain_optimize_info'] = 'This task allows you to optimize all tables. This will get rid of overhead, effectively making the tables smaller in size and your forum faster.';
 $txt['maintain_version'] = 'Check all files against current versions';
 $txt['maintain_version_info'] = 'This maintenance task allows you to do a detailed version check of all forum files against the official list of latest versions.';
+$txt['maintain_rebuild_settings'] = 'Rebuild Settings.php';
+$txt['maintain_rebuild_settings_info'] = 'This task reconstructs your Settings.php file. It does not change the values stored in the file. Instead, it cleans up and reformats your Settings.php file to a pristine version.';
 $txt['maintain_run_now'] = 'Run task now';
 $txt['maintain_return'] = 'Back to Forum Maintenance';
-
-$txt['maintain_backup'] = 'Backup Database';
-$txt['maintain_backup_info'] = 'Download a backup copy of your forums database in case of emergency.';
-$txt['maintain_backup_struct'] = 'Save the table structure.';
-$txt['maintain_backup_data'] = 'Save the table data (the important stuff).';
-$txt['maintain_backup_gz'] = 'Compress the file with gzip.';
-$txt['maintain_backup_save'] = 'Download';
 
 $txt['maintain_old'] = 'Remove old posts';
 $txt['maintain_old_since_days1'] = 'Remove all topics not posted in for ';

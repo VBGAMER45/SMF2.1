@@ -9,10 +9,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -35,6 +35,10 @@ function Register($reg_errors = array())
 	// Check if the administrator has it disabled.
 	if (!empty($modSettings['registration_method']) && $modSettings['registration_method'] == '3')
 		fatal_lang_error('registration_disabled', false);
+
+	// You cannot register with cookies disabled
+	if (empty($_COOKIE))
+		fatal_lang_error('func_cookie_error', false);
 
 	// If this user is an admin - redirect them to the admin registration page.
 	if (allowedTo('moderate_forum') && !$user_info['is_guest'])
@@ -313,20 +317,17 @@ function Register2()
 		}
 	}
 
-	foreach ($_POST as $key => $value)
-	{
-		if (!is_array($_POST[$key]))
+	array_walk_recursive(
+		$_POST,
+		function (&$value, $key) use ($context, $smcFunc)
 		{
-			// For UTF-8, replace any kind of space with a normal space, and remove any kind of control character (incl. "\n" and "\r"), then trim.
-			if ($context['utf8'])
-				$_POST[$key] = $smcFunc['htmltrim'](preg_replace(array('~\p{Z}+~u', '~\p{C}+~u'), array(' ', ''), $_POST[$key]));
-			// Otherwise, just remove "\n" and "\r", then trim.
-			else
-				$_POST[$key] = $smcFunc['htmltrim'](str_replace(array("\n", "\r"), '', $_POST[$key]));
+			// Normalize Unicode characters. (Does nothing if not in UTF-8 mode.)
+			$value = $smcFunc['normalize']($value);
+
+			// Replace any kind of space or illegal character with a normal space, and then trim.
+			$value = $smcFunc['htmltrim'](normalize_spaces(sanitize_chars($value, 1, ' '), true, true, array('no_breaks' => true, 'replace_tabs' => true, 'collapse_hspace' => true)));
 		}
-		else
-			$_POST[$key] = htmltrim__recursive($_POST[$key]);
-	}
+	);
 
 	// Collect all extra registration fields someone might have filled in.
 	$possible_strings = array(
@@ -361,7 +362,7 @@ function Register2()
 
 			// Make sure their website URL is squeaky clean
 			if (isset($_POST['website_url']))
-				$_POST['website_url'] = (string) validate_iri(sanitize_iri($_POST['website_url']));
+				$_POST['website_url'] = (string) validate_iri(normalize_iri($_POST['website_url']));
 		}
 	}
 
@@ -401,7 +402,7 @@ function Register2()
 
 	// Handle a string as a birthdate...
 	if (isset($_POST['birthdate']) && $_POST['birthdate'] != '')
-		$_POST['birthdate'] = strftime('%Y-%m-%d', strtotime($_POST['birthdate']));
+		$_POST['birthdate'] = smf_strftime('%Y-%m-%d', strtotime($_POST['birthdate']));
 	// Or birthdate parts...
 	elseif (!empty($_POST['bday1']) && !empty($_POST['bday2']))
 		$_POST['birthdate'] = sprintf('%04d-%02d-%02d', empty($_POST['bday3']) ? 0 : (int) $_POST['bday3'], (int) $_POST['bday1'], (int) $_POST['bday2']);
@@ -500,7 +501,7 @@ function Register2()
 			// Any masks to apply?
 			if ($row['field_type'] == 'text' && !empty($row['mask']) && $row['mask'] != 'none')
 			{
-				if ($row['mask'] == 'email' && (!filter_var($value, FILTER_VALIDATE_EMAIL) || strlen($value) > 255))
+				if ($row['mask'] == 'email' && (!filter_var($value, FILTER_VALIDATE_EMAIL) || filter_var($value, FILTER_SANITIZE_EMAIL) !== $value || strlen($value) > 255))
 					$custom_field_errors[] = array('custom_field_invalid_email', array($row['field_name']));
 				elseif ($row['mask'] == 'number' && preg_match('~[^\d]~', $value))
 					$custom_field_errors[] = array('custom_field_not_number', array($row['field_name']));
@@ -520,7 +521,7 @@ function Register2()
 	{
 		loadLanguage('Errors');
 		foreach ($custom_field_errors as $error)
-			$reg_errors[] = vsprintf($txt['error_' . $error[0]], $error[1]);
+			$reg_errors[] = vsprintf($txt['error_' . $error[0]], (array) $error[1]);
 	}
 
 	// Lets check for other errors before trying to register the member.
@@ -649,7 +650,7 @@ function Activate()
 		if (empty($modSettings['registration_method']) || $modSettings['registration_method'] == 3)
 			fatal_lang_error('no_access', false);
 
-		if (!filter_var($_POST['new_email'], FILTER_VALIDATE_EMAIL))
+		if (!filter_var($_POST['new_email'], FILTER_VALIDATE_EMAIL) || filter_var($_POST['new_email'], FILTER_SANITIZE_EMAIL) !== $_POST['new_email'])
 			fatal_error(sprintf($txt['valid_email_needed'], $smcFunc['htmlspecialchars']($_POST['new_email'])), false);
 
 		// Make sure their email isn't banned.
@@ -729,7 +730,8 @@ function Activate()
 	// Also do a proper member stat re-evaluation.
 	updateStats('member', false);
 
-	if (!isset($_POST['new_email']))
+	// Notify the admin about new activations, but not re-activations.
+	if (empty($row['is_activated']))
 	{
 		require_once($sourcedir . '/Subs-Post.php');
 
@@ -837,7 +839,7 @@ function VerificationCode()
 	global $sourcedir, $context, $scripturl;
 
 	$verification_id = isset($_GET['vid']) ? $_GET['vid'] : '';
-	$code = $verification_id && isset($_SESSION[$verification_id . '_vv']) ? $_SESSION[$verification_id . '_vv']['code'] : (isset($_SESSION['visual_verification_code']) ? $_SESSION['visual_verification_code'] : '');
+	$code = $verification_id && isset($_SESSION[$verification_id . '_vv'], $_SESSION[$verification_id . '_vv']['code']) ? $_SESSION[$verification_id . '_vv']['code'] : (isset($_SESSION['visual_verification_code']) ? $_SESSION['visual_verification_code'] : '');
 
 	// Somehow no code was generated or the session was lost.
 	if (empty($code))
@@ -902,7 +904,12 @@ function VerificationCode()
  */
 function RegisterCheckUsername()
 {
-	global $sourcedir, $context;
+	global $sourcedir, $context, $scripturl, $cookiename, $smcFunc;
+
+	// Who are you again?
+	if (empty($_COOKIE) || empty($_COOKIE[$cookiename]) || empty($_SERVER['HTTP_REFERER']) || stripos($_SERVER['HTTP_REFERER'], $scripturl) !== 0) {
+		send_http_status(403);
+	}
 
 	// This is XML!
 	loadTemplate('Xml');
@@ -911,10 +918,11 @@ function RegisterCheckUsername()
 	$context['valid_username'] = true;
 
 	// Clean it up like mother would.
-	$context['checked_username'] = preg_replace('~[\t\n\r \x0B\0' . ($context['utf8'] ? '\x{A0}\x{AD}\x{2000}-\x{200F}\x{201F}\x{202F}\x{3000}\x{FEFF}' : '\x00-\x08\x0B\x0C\x0E-\x19\xA0') . ']+~' . ($context['utf8'] ? 'u' : ''), ' ', $context['checked_username']);
+	$context['checked_username'] = trim(normalize_spaces(sanitize_chars($context['checked_username'], 1, ' '), true, true, array('no_breaks' => true, 'replace_tabs' => true, 'collapse_hspace' => true)));
 
 	require_once($sourcedir . '/Subs-Auth.php');
 	$errors = validateUsername(0, $context['checked_username'], true);
+	$context['checked_username'] = $smcFunc['htmlspecialchars']($context['checked_username']);
 
 	$context['valid_username'] = empty($errors);
 }

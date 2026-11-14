@@ -14,19 +14,19 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 define('SMF', 'BACKGROUND');
-define('SMF_VERSION', '2.1 RC4');
+define('SMF_VERSION', '2.1.8');
 define('SMF_FULL_VERSION', 'SMF ' . SMF_VERSION);
-define('SMF_SOFTWARE_YEAR', '2021');
+define('SMF_SOFTWARE_YEAR', '2026');
 define('FROM_CLI', empty($_SERVER['REQUEST_METHOD']));
 
-define('JQUERY_VERSION', '3.6.0');
+define('JQUERY_VERSION', '3.6.3');
 define('POSTGRE_TITLE', 'PostgreSQL');
 define('MYSQL_TITLE', 'MySQL');
 define('SMF_USER_AGENT', 'Mozilla/5.0 (' . php_uname('s') . ' ' . php_uname('m') . ') AppleWebKit/605.1.15 (KHTML, like Gecko)  SMF/' . strtr(SMF_VERSION, ' ', '.'));
@@ -77,6 +77,10 @@ if ($maintenance == 2)
 if (substr($sourcedir, 0, 1) == '.' && substr($sourcedir, 1, 1) != '.')
 	$sourcedir = dirname(__FILE__) . substr($sourcedir, 1);
 
+// Do nothing if we are in the middle of an install or upgrade.
+if (!empty($upgradeData) || !empty($package_installing))
+	obExit_cron();
+
 // Have we already turned this off? If so, exist gracefully.
 if (file_exists($cachedir . '/cron.lock'))
 	obExit_cron();
@@ -103,6 +107,10 @@ require_once($sourcedir . '/Load.php');
 require_once($sourcedir . '/Security.php');
 require_once($sourcedir . '/Subs.php');
 
+// Ensure we don't trip over disabled internal functions
+if (version_compare(PHP_VERSION, '8.0.0', '>='))
+	require_once($sourcedir . '/Subs-Compat.php');
+
 // Create a variable to store some SMF specific functions in.
 $smcFunc = array();
 
@@ -113,6 +121,7 @@ reloadSettings();
 
 // Just in case there's a problem...
 set_error_handler('smf_error_handler_cron');
+set_exception_handler('smf_exception_handler_cron');
 $sc = '';
 $_SERVER['QUERY_STRING'] = '';
 $_SERVER['REQUEST_URL'] = FROM_CLI ? 'CLI cron.php' : $boardurl . '/cron.php';
@@ -136,6 +145,18 @@ while ($task_details = fetch_task())
 		);
 	}
 }
+
+// If we have time, check the scheduled tasks.
+if (time() - TIME_START < ceil(MAX_CRON_TIME / 2))
+{
+	require_once($sourcedir . '/ScheduledTasks.php');
+
+	if (empty($modSettings['next_task_time']) || $modSettings['next_task_time'] < time())
+		AutoTask();
+	elseif (!empty($modSettings['mail_next_send']) && $modSettings['mail_next_send'] < time())
+		ReduceMailQueue();
+}
+
 obExit_cron();
 exit;
 
@@ -285,6 +306,26 @@ function smf_error_handler_cron($error_level, $error_string, $file, $line)
 	// If this is an E_ERROR or E_USER_ERROR.... die.  Violently so.
 	if ($error_level % 255 == E_ERROR)
 		die('No direct access...');
+}
+
+/**
+ * Generic handler for uncaught exceptions.
+ *
+ * Always ends execution.
+ *
+ * @param \Throwable $e The uncaught exception.
+ */
+function smf_exception_handler_cron(\Throwable $e)
+{
+	global $modSettings, $txt;
+
+	loadLanguage('Errors');
+
+	$message = $txt[$e->getMessage()] ?? $e->getMessage();
+
+	if (!empty($modSettings['enableErrorLogging'])) {
+		log_error($message, 'cron', $e->getFile(), $e->getLine());
+	}
 }
 
 /**

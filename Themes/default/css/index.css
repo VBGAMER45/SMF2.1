@@ -75,10 +75,6 @@ input[type="file"] {
 	padding: 2px;
 	height: auto;
 }
-/* Remove default mozilla dotted borders */
-input[type="submit"]::-moz-focus-inner, button::-moz-focus-inner {
-	border: 0;
-}
 /* Prevent inputs and images overflowing */
 img, input, select, textarea {
 	max-width: 100%;
@@ -211,15 +207,16 @@ body#help_popup {
 #likes li {
 	clear: both;
 	padding: 1px 0;
+	display: flex;
+	align-items: center;
 }
 #likes .avatar {
-	max-height: 45px;
-	max-width: 45px;
+	height: 5em;
+	width: 5em;
 	margin: 0 10px 0 0;
 }
-#likes .avatar, #likes li .like_profile {
-	vertical-align: middle;
-	display: inline-block;
+#likes li .like_profile {
+	flex: 1 0 auto;
 }
 #likes li .like_time {
 	padding: 4px 0;
@@ -232,7 +229,7 @@ body#help_popup {
 }
 
 /* The "new" button */
-.new_posts {
+.new_posts, a.new_posts {
 	display: inline-block;
 	position: relative;
 	top: -2px;
@@ -409,6 +406,14 @@ blockquote cite::before {
 	font: inherit;
 	color: inherit;
 }
+.lefttext .bbc_table,
+.centertext .bbc_table {
+	margin-right: auto;
+}
+.righttext .bbc_table,
+.centertext .bbc_table {
+	margin-left: auto;
+}
 .bbc_table td {
 	font: inherit;
 	color: inherit;
@@ -490,6 +495,7 @@ a img {
 	font-weight: bold;
 	color: #ff7200 !important;
 	font-size: 1.1em;
+	background-color: inherit;
 }
 
 /* the page navigation area */
@@ -497,6 +503,10 @@ a img {
 	padding: 2px 0;
 	overflow: hidden;
 	clear: both;
+}
+.pagesection .pagelinks {
+	display: inline-block;
+	float: left;
 }
 .pages::after, .jump_to::after, .code::after,
 strong[id^='child_list_']::after {
@@ -627,7 +637,7 @@ dl.settings img {
 /* a general table class */
 table.table_grid {
 	border-collapse: collapse;
-	margin: 1px 0 5px 0;
+	margin: 0;
 	width: 100%;
 }
 table.table_grid td {
@@ -773,6 +783,11 @@ img.sort, .sort {
 	text-shadow: none;
 }
 
+a.mobile_user_menu,
+a[class^="mobile_generic_menu_"] {
+	display: none;
+}
+
 #main_menu {
 	margin: 0 0 4px 0;
 }
@@ -794,7 +809,7 @@ img.sort, .sort {
 	display: block;
 }
 .profile_user_links ol {
-	margin: 0 10px;
+	margin-left: 10px;
 	clear: both;
 	column-count: 2;
 }
@@ -807,7 +822,9 @@ img.sort, .sort {
 	hyphens: auto;
 }
 /* Fixes bug with border-box on scrollable js */
-.scrollable, .scrollable * {
+.scrollable,
+.scrollable *,
+#profile_menu {
 	box-sizing: content-box;
 }
 .top_menu.scrollable {
@@ -931,20 +948,6 @@ img.sort, .sort {
 .top_menu .login input {
 	width: 90%;
 }
-/* Note: The next declarations are for keyboard access with js disabled. */
-.dropmenu ul a:focus, .dropmenu ul ul a:focus {
-	margin-left: 9990px;
-	border: none;
-	width: 17em;
-}
-.dropmenu ul ul a:focus {
-	margin-left: 19950px;
-}
-/* Cancel those for hover and/or js access. */
-.dropmenu ul li:hover a:focus, .dropmenu ul li a:focus {
-	margin-left: 0;
-	width: auto;
-}
 /* Level 3 submenu wrapper positioning. */
 .dropmenu li ul ul {
 	margin: -2em 0 0 15.3em;
@@ -999,7 +1002,6 @@ img.sort, .sort {
 .buttonlist, .buttonrow, .pagelinks {
 	z-index: 100;
 	padding: 5px 0 5px 0;
-	margin: 5px 0 5px 0;
 }
 .button, .quickbuttons > li > a, .inline_mod_check {
 	display: inline-block;
@@ -1009,7 +1011,7 @@ img.sort, .sort {
 	line-height: 2em;
 	text-transform: uppercase;
 	cursor: pointer;
-	height: calc(2em + 2em * (0.9 - 0.85)); /* "input" font size minus ".button" font size */
+	min-height: calc(2em + 2em * (0.9 - 0.85)); /* "input" font size minus ".button" font size */
 	border: 1px solid;
 	border-color: #ddd #bbb #aaa #ddd;
 	border-radius: 3px;
@@ -1017,11 +1019,13 @@ img.sort, .sort {
 	box-sizing: border-box;
 	vertical-align: middle;
 }
+html[lang="el-GR"] .button,
+html[lang="el-GR"] .quickbuttons > li > a,
+html[lang="el-GR"] .inline_mod_check {
+	text-transform: capitalize;
+}
 .pagesection .button {
 	color: #346;
-}
-.button:not(:first-child) {
-	margin-left: 4px;
 }
 .button:hover, .button:focus,
 .quickbuttons > li:hover > a, .quickbuttons > li > a:focus {
@@ -1104,13 +1108,22 @@ img.sort, .sort {
 #top_info {
 	padding: 5px 0;
 	line-height: 1.3em;
-	width: auto;
+	max-width: 100%;
+}
+#pm_menu, #alerts_menu, #profile_menu {
+	left: 0;
+	right: 0;
+	padding-right: 10px;
 }
 #profile_menu_top > img.avatar {
 	height: 18px;
 	width: 18px;
 	margin: 2px 5px 0 0;
 	float: left;
+}
+#pm_menu_top .main_icons,
+#alerts_menu_top .main_icons {
+	display: none;
 }
 .notice {
 	font-weight: bold;
@@ -1156,7 +1169,8 @@ img#smflogo {
 }
 /* Even guests need to be aligned */
 .welcome {
-	padding: 7px 0 8px 10px;
+	padding: 0 10px;
+	line-height: 2.5em;
 }
 /*
 /* The user info, news, etc.*/
@@ -1173,17 +1187,32 @@ img#smflogo {
 	clear: both;
 }
 /* The upper_section, float the two each way */
-.user {
-	width: 50%;
-	float: left;
-	overflow: auto;
-	padding: 0 4px 6px 4px;
-	font-size: 0.9em;
+#inner_wrap {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	border-bottom: 1px solid #bbb;
+	margin-bottom: 12px;
 }
-.user ul {
-	padding: 0 0 5px 0;
+.user {
+	padding: 0 4px 8px 4px;
 	font-size: 0.9em;
-	line-height: 1.8em;
+	white-space: nowrap;
+}
+.user:only-child {
+	width: 100%;
+	display: flex;
+	justify-content: space-between;
+}
+.user time,
+.user .unread_links,
+.user .unread_links li {
+	display: inline-block;
+}
+.user:not(:last-child) time:not(:last-child)::after,
+.user .unread_links li:not(:last-child)::after {
+	content: " • ";
+	margin: 0 1ch;
 }
 ul li.greeting {
 	font-weight: bold;
@@ -1196,14 +1225,19 @@ ul li.greeting {
 }
 /* News section. */
 #inner_wrap .news {
-	max-width: 50%;
-	float: right;
-	padding: 0 0 6px 0;
+	padding: 0 0 8px 1ch;
 	font-size: 0.9em;
+	display: flex;
+	align-items: baseline;
+	max-width: 50%;
 }
-#inner_wrap .news h2, #inner_wrap .news p {
+#inner_wrap .news h2 {
+	line-height: initial;
+}
+#inner_wrap .news h2,
+#inner_wrap .news p {
 	display: inline;
-	padding: 0 0 0 4px;
+	padding-left: 1ch;
 }
 
 /* The navigation list (i.e. linktree) */
@@ -1254,14 +1288,6 @@ ul li.greeting {
 	text-decoration: underline;
 }
 
-/* "Unread posts" and "New replies" links, accessible with header collapsed. */
-.navigate_section .unread_links {
-	float: right;
-}
-.navigate_section .unread_links a {
-	padding: 4px 0 4px 10px;
-	margin-top: 4px;
-}
 /* The content section */
 #content_section {
 	margin: 0 auto;
@@ -1310,14 +1336,6 @@ ul li.greeting {
 	padding: 0;
 }
 
-/* the small stats */
-#index_common_stats {
-	margin: -4px 8px 6px 8px;
-	padding: 4px 0 0 0;
-	font-size: 0.9em;
-	border-top: 1px solid #ddd;
-}
-
 .fix_rtl_names {
 	display: inline-block;
 }
@@ -1348,6 +1366,11 @@ ul li.greeting {
 }
 .quickbuttons > li:last-child > a, .inline_mod_check:last-child {
 	border-radius: 0 4px 4px 0;
+}
+.quickbuttons > li:only-child > a, .inline_mod_check:only-child {
+	border-radius: 4px;
+	margin: 2px;
+	height: 23px;
 }
 .inline_mod_check input {
 	position: relative;
@@ -1408,9 +1431,24 @@ ul li.greeting {
 
 /* The jump to box */
 #display_jump_to {
-	padding: 11px 0 5px 0;
+	padding: 5px 0;
+	margin: 4px 0;
 	float: right;
 	font-size: 1em;
+}
+#topic_icons #message_index_jump_to {
+	padding: 0;
+	float: right;
+}
+
+/* The category separator string is 29 dashes */
+#display_jump_to_select,
+#message_index_jump_to_select,
+#search_jump_to_select,
+#quick_mod_jump_to_select,
+#list_integration_hooks select {
+	width: 29ch;
+	overflow: hidden;
 }
 
 .quickModifyMargin {
@@ -1446,13 +1484,12 @@ ul li.greeting {
 }
 .event_options_left {
 	box-sizing: border-box;
-	width: 49%;
-	padding-right: 1em;
+	width: 55%;
 	min-width: 238px;
 }
 .event_options_right {
 	box-sizing: border-box;
-	width: 50%;
+	width: 45%;
 	min-width: 270px;
 }
 .event_options_left div,
@@ -1466,9 +1503,18 @@ ul li.greeting {
 #event_time_input {
 	clear: left;
 }
-#event_time_input input[type="text"] {
-	width: 100px;
-	display: inline-block;
+#event_time_input > div {
+	display: flex;
+}
+#event_time_input input.date_input {
+	width: 40%;
+	margin: 2px 0.5ch 0;
+	flex: 1 1 auto;
+}
+#event_time_input input.time_input {
+	width: 13ch;
+	margin: 2px 0.5ch 0;
+	flex: 0 1 auto;
 }
 #post_event input[type="checkbox"] {
 	height: auto;
@@ -1588,6 +1634,9 @@ fieldset.merge_options {
 .login input[type="submit"] {
 	margin: 1em 0 0 1em;
 }
+.login p:not(:last-of-type) input[type="submit"] {
+	margin-bottom: 1em;
+}
 
 /* Additional register fields */
 #registration fieldset {
@@ -1692,12 +1741,19 @@ tr.windowbg td, tr.bg td, .table_grid tr td {
 	background: url(../images/icons/main_icons_sprite.png) no-repeat -5px -5px / 260px auto;
 	vertical-align: middle;
 }
+.main_icons.alerts::before {
+	background: url(../images/icons/bell.png);
+	background-size: 16px;
+}
 /* Load better icons for higher resolution screens */
 @media
 	screen and (-webkit-min-device-pixel-ratio: 1.66),
 	screen and (min-resolution: 160dpi) {
 	.main_icons::before {
 		background-image: url(../images/icons/main_icons_sprite_hd.png);
+	}
+	.main_icons.alerts::before {
+		background-image: url(../images/icons/bell_hd.png);
 	}
 }
 
@@ -1814,7 +1870,7 @@ tr.windowbg td, tr.bg td, .table_grid tr td {
 .main_icons.warning_mute::before {
 	background-position: -57px -83px;
 }
-.main_icons.alerts::before, .main_icons.warn_button::before,
+.main_icons.warn_button::before,
 .main_icons.warning_moderate::before {
 	background-position: -83px -83px;
 }
@@ -1914,7 +1970,7 @@ tr.windowbg td, tr.bg td, .table_grid tr td {
 .main_icons.personal_message::before {
 	background-position: -83px -161px;
 }
-.main_icons.permissions::before, .main_icons.signup::before {
+.main_icons.permissions::before, .main_icons.login::before {
 	background-position: -109px -161px;
 }
 .main_icons.paid::before {
@@ -1965,7 +2021,8 @@ tr.windowbg td, tr.bg td, .table_grid tr td {
 	background-position: -239px -187px;
 }
 /* 9th Row */
-.main_icons.languages::before {
+.main_icons.languages::before,
+.main_icons.recent_posts::before {
 	background-position: -5px -213px;
 }
 .main_icons.members_request::before {
@@ -2206,7 +2263,7 @@ dl {
 }
 #basicinfo h4 {
 	font-size: 1.4em;
-	font-weight: 100;
+	font-weight: normal;
 	-webkit-hyphens: auto;
 	-ms-hyphens: auto;
 	hyphens: auto;
@@ -2215,7 +2272,6 @@ dl {
 }
 #basicinfo h4 span.position {
 	font-size: 0.8em;
-	font-weight: 100;
 	display: block;
 }
 #basicinfo img.avatar, dl.settings img.avatar {
@@ -2339,14 +2395,20 @@ dl {
 .topic_details {
 	padding: 0 4px 4px 4px;
 }
+.counter + .topic_details {
+	margin-left: 25px;
+}
 .list_posts {
 	border-top: 1px solid #ddd;
 	box-shadow: 0 1px 0 #fff inset;
-	padding-top: 12px;
+	padding-top: 1em;
+	margin-top: 1em;
+	margin-bottom: 1em;
 	clear: both;
 	-webkit-hyphens: auto;
 	-ms-hyphens: auto;
 	hyphens: auto;
+	overflow-wrap: break-word;
 }
 .topic h4 {
 	margin: 3px 0;
@@ -2377,13 +2439,32 @@ dl {
 	height: 16px;
 }
 
+.boardslist > ul > li {
+	margin: 12px;
+}
+.boardslist > ul > li > ul {
+	columns: 2 250px;
+}
+.boardslist > ul > li > ul > li {
+	break-inside: avoid;
+	display: inline-block;
+	vertical-align: top;
+	width: 100%;
+}
 .boardslist a {
 	font-weight: bold;
 	border-bottom: 1px solid #c4c4c4;
+	display: block;
+	margin-bottom: 0.5em;
 }
 .boardslist a:hover {
 	text-decoration: none;
 	border-bottom: 1px solid #334466;
+}
+.boardslist label {
+	display: inline-block;
+	text-indent: -3ch;
+	margin: 0 3ch;
 }
 
 #theme_settings {
@@ -2727,18 +2808,29 @@ dl.addrules dt.floatleft {
 	background: rgba(40, 64, 80, 0.5);
 	z-index: 6;
 }
-.popup_window {
+#genericmenu > .popup_container {
+	z-index: 5;
+}
+#adm_submenus > .popup_container {
+	z-index: 4;
+}
+.popup_window,
+#main_menu .popup_window,
+#genericmenu .popup_window,
+#adm_submenus .popup_window {
 	position: relative;
-	width: 480px;
+	width: auto;
 	z-index: 99;
-	padding: 0 6px 6px 6px;
 	box-shadow: 0 3px 6px rgba(0, 0, 0, 0.5);
 	border: 1px solid #777;
 	border-radius: 7px 7px 3px 3px;
-	overflow: visible !important;
-	background: #fff;
-	top: 15%;
 	margin: 0 auto;
+	padding: 0;
+}
+.popup_window {
+	top: 15%;
+	width: 480px;
+	padding: 0 6px 6px 6px;
 }
 .popup_heading {
 	padding: 10px 8px;
@@ -2755,30 +2847,19 @@ dl.addrules dt.floatleft {
 	border-radius: 6px 6px 2px 2px;
 	box-shadow: 0 -2px 3px rgba(0, 0, 0, 0.15), 0 1px 1px rgba(255, 255, 255, 0.2);
 }
-#main_menu .popup_heading, #genericmenu .popup_heading {
+#main_menu .popup_heading,
+#genericmenu .popup_heading,
+#adm_submenus .popup_heading {
 	display: none;
 }
-#genericmenu > .popup_container {
-	z-index: 5;
-}
-#main_menu .popup_container, #genericmenu > .popup_container {
+#main_menu .popup_container,
+#genericmenu > .popup_container,
+#adm_submenus > .popup_container {
 	display: block;
 	position: relative;
 	background: none;
 	margin: 0;
 	height: auto; /* In case anything fishy happens in the situations where this used make sure it stays still */
-}
-#main_menu .popup_window, #genericmenu .popup_window {
-	position: relative;
-	width: auto;
-	box-shadow: none;
-	border: none;
-	border-radius: 0;
-	background: none;
-	background-image: none;
-	margin: 0;
-	top: 0;
-	padding: 0;
 }
 .main_icons.hide_popup {
 	float: right;
@@ -2907,6 +2988,9 @@ div#manage_boards dl dd textarea[name=desc] {
 
 /* BoardIndex */
 /* This place covers board places (boardindex/messageindex/recent) */
+.boardindex_table:not(:last-child) {
+	margin-bottom: 15px;
+}
 h3 .collapse {
 	float: right;
 	margin: 4px 4px 0 0;
@@ -2977,7 +3061,7 @@ h3 .collapse {
 .up_contain {
 	overflow: hidden;
 	border: 1px solid #ddd;
-	margin: -1px 0 3px 0;
+	margin: 0 0 3px 0;
 	display: flex;
 	flex-wrap: wrap;
 }
@@ -3303,33 +3387,38 @@ img.avatar {
 .messageicon img, #iconList img {
 	vertical-align: middle;
 }
-.keyinfo h5 {
+.keyinfo .postinfo {
 	padding: 1px 0 5px 0;
 	line-height: 1.5em;
 	font-size: 0.9em;
+	font-weight: bold;
+	display: flex;
+	flex-flow: row wrap;
+	justify-content: space-between;
+	align-items: center;
 }
-.keyinfo h5::after, .under_message::after {
+.keyinfo .postinfo::after, .under_message::after {
 	content: "";
 	clear: right;
 	display: block;
 }
-.keyinfo h5 a, .keyinfo h5 a strong {
+.keyinfo .postinfo a, .keyinfo .postinfo a strong {
 	color: #ad6825;
 }
-.keyinfo h5 a.floatright {
-	padding: 0 12px 0 0; /* Deprecated? */
+.keyinfo .postinfo .spacer {
+	flex: 1 1 auto;
 }
-.keyinfo h5 .modified {
+.keyinfo .postinfo .modified {
 	color: #333;
 	font-weight: normal;
 	font-style: italic;
 	padding: 2px 4px 0 4px;
 }
-.mvisible::before {
-	content: "\00ab ";
-}
-.mvisible::after {
-	content: " \00bb";
+/* PMs postinfo */
+#personal_messages .keyinfo .postinfo {
+	flex-direction: column;
+	align-items: flex-start;
+	font-weight: normal;
 }
 #reason::before {
 	content: " - ";
@@ -3345,8 +3434,8 @@ img.avatar {
 .page_number {
 	color: #ad6825;
 	font-weight: bold;
-	opacity: 0.4;
-	padding: 2px 0 0 4px;
+	padding: 4px 0 0 4px;
+	line-height: 1.5em;
 }
 .inner {
 	padding: 7px 8px 2px 2px;
@@ -3450,8 +3539,6 @@ ul.post_options li {
 	height: 22px;
 }
 #post_settings, #postAttachment, #postAttachment2, #attachment_previews {
-	border-top: 1px solid #ddd;
-	margin: -1px 0 0 0;
 	padding: 10px 0;
 }
 #postAttachment dd, #postAttachment2 dd {
@@ -3547,6 +3634,13 @@ ul.post_options li {
 	border: none;
 	box-shadow: none;
 }
+.smflikebutton {
+	margin-top: 4px;
+}
+.like_count,
+.smflikebutton:last-child {
+	margin-bottom: 4px;
+}
 /* Events */
 .edit_event {
 	margin: 0 10px;
@@ -3593,6 +3687,10 @@ div.cat_bar {
 	box-shadow: 0 16px 20px rgba(255, 255, 255, 0.15) inset;
 	text-shadow: -1px -1px 1px rgba(0, 0, 0, 0.2);
 }
+.cat_bar.collapsed,
+.cat_bar.cat_bar_round {
+	border-radius: 6px;
+}
 .cat_bar h3 {
 	padding: 8px 12px 6px 12px;
 }
@@ -3621,7 +3719,6 @@ h3.catbg a:hover {
 	text-decoration: none;
 }
 h3.catbg .main_icons::before, h3.catbg .icon {
-	vertical-align: middle;
 	margin: 0 5px 0 0;
 }
 .cat_bar + .windowbg, .cat_bar + .roundframe {
@@ -3694,7 +3791,7 @@ h3.titlebg, h4.titlebg, .titlebg, h3.subbg, h4.subbg, .subbg {
 .generic_list_wrapper .information div {
 	background: none;
 }
-.information a {
+.information a:not(.button) {
 	font-weight: bold;
 }
 p.information img {
@@ -3807,14 +3904,25 @@ p.information img {
 	margin-top: -1px !important;
 }
 span.member.hidden {
+	display: inline-block;
 	font-style: italic;
 }
 
 /* Icons (converted from img to css) */
 /* Stay here till I find a better place for you guys */
-h3.profile_hd {
-	background: url(../images/icons/profile_hd.png) 15px no-repeat;
-	padding: 8px 0 8px 50px;
+h3.profile_hd::before {
+	vertical-align: middle;
+}
+h3.profile_hd::before,
+.main_icons.profile_hd::before {
+	content: "";
+	background: url(../images/icons/profile_hd.png) no-repeat;
+	height: 24px;
+	width: 24px;
+	display: inline-block;
+}
+.main_icons.profile_sm::before {
+	background: url(../images/icons/profile_sm.png) no-repeat;
 }
 .xx {
 	background: url(../images/post/xx.png) 2px no-repeat;
@@ -4083,6 +4191,7 @@ tr[id^='list_news_lists_'] textarea {
 .videocontainer video {
 	object-fit: contain;
 	background: black;
+	max-width: 100%;
 }
 
 .backtrace:not(:last-child) {
@@ -4101,5 +4210,13 @@ div.sceditor-container:not(.sceditor-maximize) {
 }
 
 #attach_current_directory {
+	word-break: break-word;
+}
+/* Add max-width for theme thumbnails */
+img.theme_thumbnail {
+	max-width: 250px;
+}
+
+#lang_main_files_list .name, #member_list .email, #approve_list .email {
 	word-break: break-word;
 }

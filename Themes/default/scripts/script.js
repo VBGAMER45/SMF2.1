@@ -42,6 +42,12 @@ function getServerResponse(sUrl, funcCallback, sType, sDataType)
 	return oMyDoc = $.ajax({
 		type: sType,
 		url: sUrl,
+		headers: {
+			"X-SMF-AJAX": 1
+		},
+		xhrFields: {
+			withCredentials: typeof allow_xhjr_credentials !== "undefined" ? allow_xhjr_credentials : false
+		},
 		cache: false,
 		dataType: sDataType,
 		success: function(response) {
@@ -61,6 +67,12 @@ function getXMLDocument(sUrl, funcCallback)
 	return $.ajax({
 		type: 'GET',
 		url: sUrl,
+		headers: {
+			"X-SMF-AJAX": 1
+		},
+		xhrFields: {
+			withCredentials: typeof allow_xhjr_credentials !== "undefined" ? allow_xhjr_credentials : false
+		},
 		cache: false,
 		dataType: 'xml',
 		success: function(responseXML) {
@@ -79,6 +91,12 @@ function sendXMLDocument(sUrl, sContent, funcCallback)
 	var oSendDoc = $.ajax({
 		type: 'POST',
 		url: sUrl,
+		headers: {
+			"X-SMF-AJAX": 1
+		},
+		xhrFields: {
+			withCredentials: typeof allow_xhjr_credentials !== "undefined" ? allow_xhjr_credentials : false
+		},
 		data: sContent,
 		beforeSend: function(xhr) {
 			xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
@@ -320,11 +338,16 @@ function reqOverlayDiv(desktopURL, sHeader, sIcon)
 {
 	// Set up our div details
 	var sAjax_indicator = '<div class="centertext"><img src="' + smf_images_url + '/loading_sm.gif"></div>';
-	var sIcon = smf_images_url + '/' + (typeof(sIcon) == 'string' ? sIcon : 'helptopics.png');
 	var sHeader = typeof(sHeader) == 'string' ? sHeader : help_popup_heading_text;
 
+	var containerOptions;
+	if (typeof(sIcon) == 'string' && sIcon.match(/\.(gif|png|jpe?g|svg|bmp|tiff)$/) != null)
+		containerOptions = {heading: sHeader, content: sAjax_indicator, icon: smf_images_url + '/' + sIcon};
+	else
+		containerOptions = {heading: sHeader, content: sAjax_indicator, icon_class: 'main_icons ' + (typeof(sIcon) != 'string' ? 'help' : sIcon)};
+
 	// Create the div that we are going to load
-	var oContainer = new smc_Popup({heading: sHeader, content: sAjax_indicator, icon: sIcon});
+	var oContainer = new smc_Popup(containerOptions);
 	var oPopup_body = $('#' + oContainer.popup_id).find('.popup_content');
 
 	// Load the help page content (we just want the text to show)
@@ -334,7 +357,7 @@ function reqOverlayDiv(desktopURL, sHeader, sIcon)
 			'X-SMF-AJAX': 1
 		},
 		xhrFields: {
-			withCredentials: allow_xhjr_credentials
+			withCredentials: typeof allow_xhjr_credentials !== "undefined" ? allow_xhjr_credentials : false
 		},
 		type: "GET",
 		dataType: "html",
@@ -348,8 +371,9 @@ function reqOverlayDiv(desktopURL, sHeader, sIcon)
 			oPopup_body.html(textStatus);
 		},
 		statusCode: {
-			403: function() {
-				oPopup_body.html(banned_text);
+			403: function(res, status, xhr) {
+				let errorMsg = res.getResponseHeader('x-smf-errormsg');
+				oPopup_body.html(errorMsg !== null && errorMsg !== undefined ? errorMsg : banned_text);
 			},
 			500: function() {
 				oPopup_body.html('500 Internal Server Error');
@@ -403,7 +427,7 @@ smc_PopupMenu.prototype.open = function (sItem)
 				'X-SMF-AJAX': 1
 			},
 			xhrFields: {
-				withCredentials: allow_xhjr_credentials
+				withCredentials: typeof allow_xhjr_credentials !== "undefined" ? allow_xhjr_credentials : false
 			},
 			type: "GET",
 			dataType: "html",
@@ -931,6 +955,8 @@ smc_Toggle.prototype.changeState = function(bCollapse, bInit)
 	{
 		for (var i = 0, n = this.opt.aSwapImages.length; i < n; i++)
 		{
+			this.opt.aSwapImages[i].altExpanded = this.opt.aSwapImages[i].altExpanded ? this.opt.aSwapImages[i].altExpanded : smf_collapseAlt;
+			this.opt.aSwapImages[i].altCollapsed = this.opt.aSwapImages[i].altCollapsed ? this.opt.aSwapImages[i].altCollapsed : smf_expandAlt;
 			if (this.opt.aSwapImages[i].isCSS)
 			{
 				$('#' + this.opt.aSwapImages[i].sId).toggleClass(this.opt.aSwapImages[i].cssCollapsed, bCollapse).toggleClass(this.opt.aSwapImages[i].cssExpanded, !bCollapse).attr('title', bCollapse ? this.opt.aSwapImages[i].altCollapsed : this.opt.aSwapImages[i].altExpanded);
@@ -1086,6 +1112,7 @@ function grabJumpToContent(elem)
 				isCategory: $(this).attr('type') == 'category',
 				name: this.firstChild.nodeValue.removeEntities(),
 				is_current: false,
+				isRedirect: parseInt($(this).attr('is_redirect')),
 				childLevel: parseInt($(this).attr('childlevel'))
 			}
 		});
@@ -1128,7 +1155,8 @@ JumpTo.prototype.showSelect = function ()
 // Fill the jump to box with entries. Method of the JumpTo class.
 JumpTo.prototype.fillSelect = function (aBoardsAndCategories)
 {
-	var iIndexPointer = 0;
+	// Don't do this twice.
+	$('#' + this.opt.sContainerId).off('mouseenter');
 
 	// Create an option that'll be above and below the category.
 	var oDashOption = document.createElement('option');
@@ -1172,7 +1200,7 @@ JumpTo.prototype.fillSelect = function (aBoardsAndCategories)
 			oOption.value = aBoardsAndCategories[i].isCategory ? '#c' + aBoardsAndCategories[i].id : '?board=' + aBoardsAndCategories[i].id + '.0';
 		else
 		{
-			if (aBoardsAndCategories[i].isCategory)
+			if (aBoardsAndCategories[i].isCategory || aBoardsAndCategories[i].isRedirect)
 				oOption.disabled = 'disabled';
 			else
 				oOption.value = aBoardsAndCategories[i].id;
@@ -1510,6 +1538,7 @@ function expandThumb(thumbID)
 	img.src = link.href;
 	img.style.width = link.style.width;
 	img.style.height = link.style.height;
+	img.classList.toggle('original_size');
 
 	// place the image attributes back
 	link.href = tmp_src;
@@ -1724,7 +1753,7 @@ $(function() {
 
 		return typeof actOnElement !== "undefined" ? smfSelectText(actOnElement, true) : smfSelectText(this);
 	});
-	
+
 	// Show the Expand bbc button if needed
 	$('.bbc_code').each(function(index, item) {
 		if($(item).css('max-height') == 'none')
@@ -1738,7 +1767,7 @@ $(function() {
 		e.preventDefault();
 
 		var oCodeArea = this.parentNode.nextSibling;
-		
+
 		if(oCodeArea.classList.contains('expand_code')) {
 			$(oCodeArea).removeClass('expand_code');
 			$(this).html($(this).attr('data-expand-txt'));
@@ -1814,8 +1843,7 @@ function expand_quote_parent(oElement)
 
 function avatar_fallback(e) {
     var e = window.e || e;
-	var default_avatar = '/avatars/default.png';
-	var default_url = document.URL.substr(0,smf_scripturl.lastIndexOf('/')) + default_avatar;
+	var default_url = smf_avatars_url + '/default.png';
 
     if (e.target.tagName !== 'IMG' || !e.target.classList.contains('avatar') || e.target.src === default_url )
         return;
@@ -1937,6 +1965,14 @@ smc_preview_post.prototype.onDocSent = function (XMLDoc)
 			bodyText += preview.getElementsByTagName('body')[0].childNodes[i].nodeValue;
 
 	setInnerHTML(document.getElementById(this.opts.sPreviewBodyContainerID), bodyText);
+	$('#' + this.opts.sPreviewBodyContainerID + ' .smf_select_text').on('click', function(e) {
+		e.preventDefault();
+
+		// Do you want to target yourself?
+		var actOnElement = $(this).attr('data-actonelement');
+
+		return typeof actOnElement !== "undefined" ? smfSelectText(actOnElement, true) : smfSelectText(this);
+	});
 	document.getElementById(this.opts.sPreviewBodyContainerID).className = 'windowbg';
 
 	// Show a list of errors (if any).

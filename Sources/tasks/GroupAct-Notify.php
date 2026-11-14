@@ -8,10 +8,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 /**
@@ -32,7 +32,7 @@ class GroupAct_Notify_Background extends SMF_BackgroundTask
 		// Get the details of all the members concerned...
 		$request = $smcFunc['db_query']('', '
 			SELECT lgr.id_request, lgr.id_member, lgr.id_group, mem.email_address,
-				mem.lngfile, mem.member_name,  mg.group_name
+				mem.lngfile, mem.member_name,  mg.group_name, mg.hidden
 			FROM {db_prefix}log_group_requests AS lgr
 				INNER JOIN {db_prefix}members AS mem ON (mem.id_member = lgr.id_member)
 				INNER JOIN {db_prefix}membergroups AS mg ON (mg.id_group = lgr.id_group)
@@ -62,7 +62,7 @@ class GroupAct_Notify_Background extends SMF_BackgroundTask
 				$user_info['ip'] = $this->_details['member_ip'];
 
 				require_once($sourcedir . '/Subs-Membergroups.php');
-				addMembersToGroup($row['id_member'], $row['id_group'], 'auto', true);
+				addMembersToGroup($row['id_member'], $row['id_group'], $row['hidden'] == 2 ? 'only_additional' : 'auto', true);
 			}
 
 			// Build the required information array
@@ -90,7 +90,7 @@ class GroupAct_Notify_Background extends SMF_BackgroundTask
 			// Same as for approving, kind of.
 			foreach ($affected_users as $user)
 			{
-				$custom_reason = isset($this->_details['reason']) && isset($this->_details['reason'][$user['rid']]) ? $this->_details['reason'][$user['rid']] : '';
+				$custom_reason = isset($this->_details['reason']) && isset($this->_details['reason'][$user['rid']]) ? $smcFunc['htmlspecialchars']($this->_details['reason'][$user['rid']], ENT_QUOTES) : '';
 
 				// They are being approved?
 				if ($this->_details['status'] == 'approve')

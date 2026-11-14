@@ -7,10 +7,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -56,13 +56,6 @@ function ManageSmileys()
 		unset($subActions['editicons']);
 	}
 
-	// Default the sub-action to 'edit smiley settings'.
-	$_REQUEST['sa'] = isset($_REQUEST['sa']) && isset($subActions[$_REQUEST['sa']]) ? $_REQUEST['sa'] : 'editsets';
-
-	$context['page_title'] = $txt['smileys_manage'];
-	$context['sub_action'] = $_REQUEST['sa'];
-	$context['sub_template'] = $context['sub_action'];
-
 	// Load up all the tabs...
 	$context[$context['admin_menu_name']]['tab_data'] = array(
 		'title' => $txt['smileys_manage'],
@@ -101,6 +94,13 @@ function ManageSmileys()
 	}
 
 	call_integration_hook('integrate_manage_smileys', array(&$subActions));
+
+	// Default the sub-action to 'edit smiley settings'.
+	$_REQUEST['sa'] = isset($_REQUEST['sa']) && isset($subActions[$_REQUEST['sa']]) ? $_REQUEST['sa'] : 'editsets';
+
+	$context['page_title'] = $txt['smileys_manage'];
+
+	$context['sub_template'] = $context['sub_action'] = $_REQUEST['sa'];
 
 	// Call the right function for this sub-action.
 	call_helper($subActions[$_REQUEST['sa']]);
@@ -199,7 +199,7 @@ function EditSmileySets()
 	// Set the right tab to be selected.
 	$context[$context['admin_menu_name']]['current_subsection'] = 'editsets';
 
-	$allowedTypes = array('gif', 'png', 'jpg', 'jpeg', 'tiff', 'svg');
+	$allowedTypes = array('gif', 'png', 'jpg', 'jpeg', 'tiff', 'svg', 'webp');
 
 	// They must've been submitted a form.
 	if (isset($_POST['smiley_save']))
@@ -249,6 +249,9 @@ function EditSmileySets()
 		{
 			$set_paths = explode(',', $modSettings['smiley_sets_known']);
 			$set_names = explode("\n", $modSettings['smiley_sets_names']);
+
+			foreach (array('smiley_sets_path', 'smiley_sets_name') as $key)
+				$_POST[$key] = $smcFunc['normalize']($_POST[$key]);
 
 			// Create a new smiley set.
 			if ($_POST['set'] == -1 && isset($_POST['smiley_sets_path']))
@@ -504,7 +507,7 @@ function EditSmileySets()
 		),
 		'additional_rows' => array(
 			array(
-				'position' => 'above_table_headers',
+				'position' => 'above_column_headers',
 				'value' => '<input type="hidden" name="smiley_save"><input type="submit" name="delete" value="' . $txt['smiley_sets_delete'] . '" data-confirm="' . $txt['smiley_sets_confirm'] . '" class="button you_sure"> <a class="button" href="' . $scripturl . '?action=admin;area=smileys;sa=modifyset' . '">' . $txt['smiley_sets_add'] . '</a> ',
 			),
 			array(
@@ -602,7 +605,7 @@ function AddSmiley()
 		);
 
 	// Some useful arrays... types we allow - and ports we don't!
-	$allowedTypes = array('gif', 'png', 'jpg', 'jpeg', 'tiff', 'svg');
+	$allowedTypes = array('gif', 'png', 'jpg', 'jpeg', 'tiff', 'svg', 'webp');
 	$disabledFiles = array('con', 'com1', 'com2', 'com3', 'com4', 'prn', 'aux', 'lpt1', '.htaccess', 'index.php');
 
 	// This will hold the names of the added files for each set
@@ -612,6 +615,9 @@ function AddSmiley()
 	if (isset($_POST[$context['session_var']], $_POST['smiley_code']))
 	{
 		checkSession();
+
+		foreach (array('smiley_code', 'smiley_filename', 'smiley_description') as $key)
+			$_POST[$key] = $smcFunc['normalize']($_POST[$key]);
 
 		$_POST['smiley_code'] = htmltrim__recursive($_POST['smiley_code']);
 		$_POST['smiley_location'] = empty($_POST['smiley_location']) || $_POST['smiley_location'] > 2 || $_POST['smiley_location'] < 0 ? 0 : (int) $_POST['smiley_location'];
@@ -928,7 +934,7 @@ function EditSmileys()
 	$context[$context['admin_menu_name']]['current_subsection'] = 'editsmileys';
 	$context['smileys_dir'] = empty($modSettings['smileys_dir']) ? $boarddir . '/Smileys' : $modSettings['smileys_dir'];
 
-	$allowedTypes = array('gif', 'png', 'jpg', 'jpeg', 'tiff', 'svg');
+	$allowedTypes = array('gif', 'png', 'jpg', 'jpeg', 'tiff', 'svg', 'webp');
 	$disabledFiles = array('con', 'com1', 'com2', 'com3', 'com4', 'prn', 'aux', 'lpt1', '.htaccess', 'index.php');
 	$known_sets = explode(',', $modSettings['smiley_sets_known']);
 
@@ -1005,6 +1011,9 @@ function EditSmileys()
 			// Otherwise an edit.
 			else
 			{
+				foreach (array('smiley_code', 'smiley_description') as $key)
+					$_POST[$key] = $smcFunc['normalize']($_POST[$key]);
+
 				$_POST['smiley'] = (int) $_POST['smiley'];
 				$_POST['smiley_code'] = htmltrim__recursive($_POST['smiley_code']);
 				$_POST['smiley_location'] = empty($_POST['smiley_location']) || $_POST['smiley_location'] > 2 || $_POST['smiley_location'] < 0 ? 0 : (int) $_POST['smiley_location'];
@@ -1018,7 +1027,7 @@ function EditSmileys()
 				foreach ($_FILES['smiley_upload']['name'] as $set => $name)
 				{
 					if (!empty($name) && !is_writable($context['smileys_dir'] . '/' . $set))
-						$writeErrors[] = $set['path'];
+						$writeErrors[] = $set;
 				}
 
 				if (!empty($writeErrors))
@@ -1068,8 +1077,8 @@ function EditSmileys()
 				$filenames = array();
 				foreach ($_POST['smiley_filename'] as $posted_set => $posted_filename)
 				{
-					$posted_set = htmltrim__recursive($posted_set);
-					$posted_filename = htmltrim__recursive($posted_filename);
+					$posted_set = $smcFunc['htmltrim']($smcFunc['normalize']($posted_set));
+					$posted_filename = $smcFunc['htmltrim']($smcFunc['normalize']($posted_filename));
 
 					// Make sure the set already exists.
 					if (!in_array($posted_set, $known_sets))
@@ -1392,7 +1401,7 @@ function EditSmileys()
 		$request = $smcFunc['db_query']('', '
 			SELECT s.id_smiley AS id, s.code, f.filename, f.smiley_set, s.description, s.hidden AS location
 			FROM {db_prefix}smileys AS s
-				JOIN {db_prefix}smiley_files AS f ON (s.id_smiley = f.id_smiley)
+				LEFT JOIN {db_prefix}smiley_files AS f ON (s.id_smiley = f.id_smiley)
 			WHERE s.id_smiley = {int:current_smiley}',
 			array(
 				'current_smiley' => (int) $_REQUEST['smiley'],
@@ -1465,7 +1474,7 @@ function list_getSmileys($start, $items_per_page, $sort)
 	$request = $smcFunc['db_query']('', '
 		SELECT s.id_smiley, s.code, f.filename, f.smiley_set, s.description, s.smiley_row, s.smiley_order, s.hidden
 		FROM {db_prefix}smileys AS s
-			JOIN {db_prefix}smiley_files AS f ON (s.id_smiley = f.id_smiley)
+			LEFT JOIN {db_prefix}smiley_files AS f ON (s.id_smiley = f.id_smiley)
 		ORDER BY {raw:sort}',
 		array(
 			'sort' => $sort,
@@ -1510,7 +1519,7 @@ function list_getNumSmileys()
 		FROM {db_prefix}smileys',
 		array()
 	);
-	list($numSmileys) = $smcFunc['db_fetch_row'];
+	list($numSmileys) = $smcFunc['db_fetch_row']($request);
 	$smcFunc['db_free_result']($request);
 
 	return $numSmileys;
@@ -1598,9 +1607,8 @@ function EditSmileyOrder()
 	$request = $smcFunc['db_query']('', '
 		SELECT s.id_smiley, s.code, f.filename, s.description, s.smiley_row, s.smiley_order, s.hidden
 		FROM {db_prefix}smileys AS s
-			JOIN {db_prefix}smiley_files AS f ON (s.id_smiley = f.id_smiley)
+			LEFT JOIN {db_prefix}smiley_files AS f ON (s.id_smiley = f.id_smiley AND f.smiley_set = {string:smiley_set})
 		WHERE s.hidden != {int:popup}
-			AND f.smiley_set = {string:smiley_set}
 		ORDER BY s.smiley_order, s.smiley_row',
 		array(
 			'popup' => 1,
@@ -1929,7 +1937,7 @@ function ImportSmileys($smileyPath, $create = false)
 	if (empty($modSettings['smileys_dir']) || !is_dir($modSettings['smileys_dir'] . '/' . $smileyPath))
 		fatal_lang_error('smiley_set_unable_to_import', false);
 
-	$allowedTypes = array('gif', 'png', 'jpg', 'jpeg', 'tiff', 'svg');
+	$allowedTypes = array('gif', 'png', 'jpg', 'jpeg', 'tiff', 'svg', 'webp');
 	$known_sets = explode(',', $modSettings['smiley_sets_known']);
 	sort($known_sets);
 
@@ -2224,6 +2232,9 @@ function EditMessageIcons()
 		elseif ($context['sub_action'] == 'editicon' && isset($_GET['icon']))
 		{
 			$_GET['icon'] = (int) $_GET['icon'];
+
+			foreach (array('icon_filename', 'icon_description') as $key)
+				$_POST[$key] = $smcFunc['normalize']($_POST[$key]);
 
 			// Do some preperation with the data... like check the icon exists *somewhere*
 			if (strpos($_POST['icon_filename'], '.png') !== false)

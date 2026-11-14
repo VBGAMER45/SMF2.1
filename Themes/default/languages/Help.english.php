@@ -1,5 +1,5 @@
 <?php
-// Version: 2.1 RC4; Help
+// Version: 2.1.8; Help
 
 global $helptxt, $scripturl;
 
@@ -252,6 +252,7 @@ $helptxt['pollMode'] = 'This selects whether polls are enabled or not. If polls 
 $helptxt['enableCompressedOutput'] = 'This setting will compress output in order to lower bandwidth consumption, but it requires
 		zlib to be installed.';
 $helptxt['httponlyCookies'] = 'Cookies won\'t be accessible by scripting languages, such as JavaScript. This setting can help to reduce identity theft through XSS attacks. This can cause issues with third party scripts but should be on wherever possible.';
+$helptxt['samesiteCookies'] = 'The SameSite attribute of the Set-Cookie HTTP response header allows you to declare if your cookie should be restricted to a first-party or same-site context. For further information, please refer to <a href="https://developer.mozilla.org/docs/Web/HTTP/Headers/Set-Cookie/SameSite">MDN</a>';
 $helptxt['databaseSession_enable'] = 'This setting makes use of the database for session storage - it is best for load balanced servers, but helps with all timeout issues and can make the forum faster.';
 $helptxt['databaseSession_loose'] = 'Turning this on will decrease the bandwidth your forum uses, and make it so clicking back will not reload the page - the downside is that the (new) icons won\'t update, among other things. (unless you click to that page instead of going back to it).';
 $helptxt['databaseSession_lifetime'] = 'This is the number of seconds for sessions to last after they haven\'t been accessed. If a session is not accessed for too long, it is said to have &quot;timed out&quot;. Anything higher than 2400 is recommended.';
@@ -265,7 +266,7 @@ $helptxt['enableErrorQueryLogging'] = 'This will include the full query sent to 
 $helptxt['disallow_sendBody'] = 'This setting removes the option to receive the text of replies, posts, and personal messages in notification emails.<br><br>Often, members will reply to the notification email, which in most cases means the webmaster receives the reply.';
 $helptxt['enable_ajax_alerts'] = 'This option allows your members to receive AJAX notifications. This means that members don\'t need to refresh the page to get new notifications.<br><strong>DO NOTE:</strong> This option might cause a severe load at your server with many users online.';
 $helptxt['alerts_auto_purge'] = 'Once an alert has been read, it is rarely needed again. For performance reasons, it is a good idea to automatically delete them after a while.';
-$helptxt['jquery_source'] = 'This will determine the source used to load the jQuery Library. <em>Auto</em> will use the CDN first and if not available fall back to the local source. <em>Local</em> will only use the local source. <em>CDN</em> will only load it from Google CDN network';
+$helptxt['jquery_source'] = 'This will determine the source used to load the jQuery Library. <em>Google CDN, jQuery CDN</em> and <em>Microsoft CDN</em> will load the jQuery library from those respective CDN networks. <em>Local</em> will only use the local source. <em>Custom</em> allows you to specify a custom URL for the library.';
 $helptxt['compactTopicPagesEnable'] = 'This will just show a selection of the number of pages.<br><em>Example:</em>
 		&quot;3&quot; to display: 1 ... 4 [5] 6 ... 9 <br>
 		&quot;5&quot; to display: 1 ... 3 4 [5] 6 7 ... 9';
@@ -327,9 +328,8 @@ $helptxt['localCookies'] = 'SMF uses cookies to store login information on the c
 	Global cookies are especially recommended when using SSI.php but work well for most sites on their own domain.';
 $helptxt['enableBBC'] = 'Selecting this setting will allow your members to use Bulletin Board Code (BBC) throughout the forum, allowing users to format their posts with images, type formatting, and more.';
 $helptxt['legacy_bbc'] = 'Legacy BBCodes are obsolete and cannot be used in new posts. However, they will be parsed in existing posts if enabled here.<br><br>Enabling legacy BBCodes is only useful if your forum was upgraded from a previous version of SMF.<br><br>Also, even when they are enabled, some legacy BBCodes will not be rendered in the same way that they once were. For example, the [flash] BBCode will simply show a link to the Flash content instead of embedding it.';
-$helptxt['time_offset'] = 'Some systems do not store times in UTC. Use this setting to specify the time difference (in hours) between the server time and UTC if needed. Negative and decimal values are permitted.';
 $helptxt['default_timezone'] = 'This is the default timezone used for the display of times throughout the forum.';
-$helptxt['timezone_priority_countries'] = 'This setting lets you push the time zones for a certain country or countries to the top of the list of selectabled time zones that is shown when users are configuring their profiles, creating calendar events, etc.<br><br>For example, if many of your forum\'s members live in New Zealand or Fiji, you may enter "NZ,FJ" to make it easier for them to find the most relevant time zones quickly.<br><br>You can find the complete list of ISO country codes by searching the Internet for "<a href="https://www.google.com/search?q=iso+3166-1+alpha-2" target="_blank" rel="noopener">ISO 3166-1 alpha-2</a>".';
+$helptxt['timezone_priority_countries'] = 'This setting lets you push the time zones for a certain country or countries to the top of the list of selectable time zones that is shown when users are configuring their profiles, creating calendar events, etc.<br><br>For example, if many of your forum\'s members live in New Zealand or Fiji, you may enter "NZ,FJ" to make it easier for them to find the most relevant time zones quickly.<br><br>You can find the complete list of ISO country codes by searching the Internet for "<a href="https://www.google.com/search?q=iso+3166-1+alpha-2" target="_blank" rel="noopener">ISO 3166-1 alpha-2</a>".';
 $helptxt['spamWaitTime'] = 'Here you can select the amount of time that must pass between postings. This can be used to stop people from "spamming" your forum by limiting how often they can post.';
 
 $helptxt['enablePostHTML'] = 'This will allow the posting of some basic HTML tags:
@@ -421,6 +421,9 @@ $helptxt['deny_boards_access'] = 'Checking this setting will allow you to deny a
 // argument(s): scripturl
 $helptxt['who_enabled'] = 'This setting allows you to turn on or off the <a href="%1$s?action=who" target="_blank" rel="noopener">Who\'s Online</a> page, which shows who is browsing the forum and what they are doing.';
 
+$helptxt['no_guest_logging'] = 'This setting prevents guests from being included in the Users Online counts. Guest and bot activity can cause excessive IO, so this may help during a bot attack.';
+$helptxt['no_guest_views'] = 'This setting disables incrementing views for guests as well as bots.  Bot activity can cause excessive IO, and is often disguised as guest activity, so this may help during a bot attack.';
+
 $helptxt['recycle_enable'] = '&quot;Recycles&quot; deleted topics and posts to the specified board.';
 
 $helptxt['enableReportPM'] = 'This setting allows your users to report personal messages they receive to the administration team. This may be useful in helping to track down any abuse of the personal messaging system.';
@@ -460,8 +463,8 @@ $helptxt['password_strength'] = 'This setting determines the strength required f
 	</ul>';
 $helptxt['enable_password_conversion'] = 'By enabling this setting, SMF will attempt to detect passwords stored in other formats and convert them to the format SMF uses. Typically this is used for forums converted to SMF, but may have other uses as well. Disabling this prevents a user from logging in using their password after a conversion and they would need to reset their password.';
 
-$helptxt['coppaAge'] = 'The value specified in this box will determine the minimum age that new members must be in order to be granted immediate access to the forums.
-	On registration they will be prompted to confirm whether they are over this age, and if not will either have their application rejected or suspended awaiting parental approval - dependant on the type of restriction chosen.
+$helptxt['coppaAge'] = 'The value specified in this box will determine the minimum age that new members must be in order to be granted immediate access to the forum.
+	On registration they will be prompted to confirm whether they are over this age, and if not will either have their application rejected or suspended awaiting parental approval - dependent on the type of restriction chosen.
 	If a value of 0 is chosen for this setting then all other age restriction settings shall be ignored.';
 $helptxt['coppaType'] = 'If age restrictions are enabled, then this setting will define what happens when a user below the minimum age attempts to register with your forum. There are two possible choices:
 	<ul class="normallist">
@@ -527,7 +530,7 @@ $helptxt['search_why_use_index'] = 'A search index can greatly improve the perfo
 
 $helptxt['see_admin_ip'] = 'IP addresses are shown to administrators and moderators to facilitate moderation and to make it easier to track people up to no good. Remember that IP addresses may not always be identifying, and most people\'s IP addresses change periodically.<br><br>Members are also allowed to see their own IPs.';
 $helptxt['see_member_ip'] = 'Your IP address is shown only to you and moderators. Remember that this information is not identifying, and that most IPs change periodically.<br><br>You cannot see other members\' IP addresses, and they cannot see yours.';
-$helptxt['whytwoip'] = 'SMF uses various methods to detect user IP addresses. Usually these two methods result in the same address but in some cases more than one address may be detected. In this case SMF logs both addresses, and uses them both for ban checks (etc). You can click on either address to track that IP and ban if necessary.';
+$helptxt['whytwoip'] = 'SMF uses various methods to detect user IP addresses. Usually these two methods result in the same address but in some cases more than one address may be detected. In this case SMF logs the two most recent addresses, and uses them both for ban checks (etc). You can click on either address to track that IP and ban if necessary.';
 
 $helptxt['ban_cannot_post'] = 'The \'cannot post\' restriction turns the forum into read-only mode for the banned user. The user cannot create new topics, or reply to existing ones, send personal messages or vote in polls. The banned user can however still read personal messages and topics.<br><br>A warning message is shown to the users that are banned this way.';
 
@@ -629,6 +632,16 @@ $helptxt['enable_sm_stats'] = 'If enabled, this will allow Simple Machines to vi
 
 $helptxt['field_reg_require'] = 'If this field is required during registration, it will also be required on profile changes.';
 
+$helptxt['translatable_fields'] = 'If you wish to provide multi-language support for your custom profile fields you can use translatable tokens on both the name and description fields.<br><br>
+Anything enclosed with braces <span class="monospace">{}</span> will be considered as a token and will be matched against a $txt string. For example, the token <span class="monospace">{gender}</span> will be replaced by the value of $txt[\'gender\']<br><br>
+It is <strong>very important</strong> to add the matched $txt string to <strong>ALL</strong> currently installed languages. To do this, go to the <a href="%1$s?action=admin;area=languages;sa=edit;%3$s=%2$s" class="bbc_link" target="_blank" rel="noopener">Edit Languages</a> page and complete the following steps for each installed language:
+<ol class="bbc_list" style="list-style-type: decimal">
+	<li>Click the "Edit" button next to the language name.</li>
+	<li>In the "Select entries to edit" menu, choose "Modifications".</li>
+	<li>Scroll to bottom and click the "Add Another Item" button.</li>
+	<li>Follow the prompts to add your new string.</li>
+</ol>';
+
 // argument(s): $boarddir, $boardurl
 $helptxt['cron_is_real_cron'] = 'By default, SMF adds to every page a small bit of JavaScript that prompts the user\'s browser to trigger SMF\'s cron.php in the background. This approach allows SMF to execute its scheduled tasks on a regular basis without requiring the admin to do any extra server configuration. However, some admins might prefer to configure their servers to directly execute cron.php on a regular basis. If you have done this, you can disable the JavaScript method.<br><br><strong>Note:</strong> Configuring your server to run scheduled tasks this way cannot be done from within SMF. You will need to use your server configuration software to do so. Typical tools for this purpose include <code>cron</code> (for Linux servers), <code>schtasks.exe</code> (for Windows servers), and <code>launchd</code> (for macOS servers). Most web hosting companies provide some sort of control panel interface to allow their customers to access these tools.<br><br>The path and URL for your forum\'s cron.php are:<br>Path: %1$s/cron.php<br>URL: %2$s/cron.php';
 
@@ -641,7 +654,7 @@ $helptxt['languages_txt_for_email_templates'] = 'These language entries are used
 $helptxt['languages_native_name'] = 'The language\'s name for itself, represented in its own script.';
 $helptxt['languages_character_set'] = 'The character encoding used for this language. As of SMF 2.1, this should always be "UTF-8".';
 $helptxt['languages_locale'] = 'The locale code is used to determine various formatting conventions, etc.<br><br>The locale code typically takes the form of a two character language code, optionally followed by an underscore and a two character country code. For example, <code>en</code> would identify generic English, while <code>en_AU</code> would identify Australian English in particular.';
-$helptxt['languages_rtl'] = 'Check this box if this language reads from right to left (e.g. Hebrew, Arabic).';
+$helptxt['languages_rtl'] = 'Enter a "1" here if this language reads from right to left (e.g. Hebrew, Arabic).  Leave it "0" for left to right languages.';
 $helptxt['languages_dictionary'] = 'This defines the main language dictionary that will be used by the <a href="https://php.net/function.pspell-new" target="_blank" rel="noopener">pSpell</a> spellchecker (if installed).';
 $helptxt['languages_recaptcha'] = 'The language code to use for the reCAPTCHA verification widget.<br><br>See Google\'s reCAPTCHA documentation for its <a href="https://developers.google.com/recaptcha/docs/language" target="_blank" rel="noopener" class="bbc_link">list of supported languages</a>.';
 // The GDPR page of the EU exists in several languages; change the language code at the end of the url

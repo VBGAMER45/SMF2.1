@@ -7,10 +7,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2025 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.5
  */
 
 if (!defined('SMF'))
@@ -415,7 +415,8 @@ function issueWarning($memID)
 
 		$context['notification_templates'][] = array(
 			'title' => $row['template_title'],
-			'body' => $row['body'],
+			// un_htmlspecialchars because this will be passed through JavaScriptEscape()
+			'body' => un_htmlspecialchars($row['body']),
 		);
 	}
 	$smcFunc['db_free_result']($request);
@@ -619,9 +620,9 @@ function deleteAccount2($memID)
 				);
 
 				$smcFunc['db_query']('', '
-					UPDATE {db_prefix}polls
+					UPDATE {db_prefix}poll_choices
 					SET votes = votes - 1
-					WHERE id_poll IN {array_int:polls_to_update}',
+					WHERE id_poll IN ({array_int:polls_to_update})',
 					array(
 						'polls_to_update' => $polls_to_update
 					)

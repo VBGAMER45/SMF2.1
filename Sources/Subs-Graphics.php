@@ -12,10 +12,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -148,6 +148,11 @@ function createThumbnail($source, $max_width, $max_height)
 	else
 		$success = resizeImageFile($source, $destName, $max_width, $max_height);
 
+	// Well this failed.
+	if (!file_exists($destName)) {
+		return false;
+	}
+
 	// Okay, we're done with the temporary stuff.
 	$destName = substr($destName, 0, -4);
 
@@ -156,7 +161,6 @@ function createThumbnail($source, $max_width, $max_height)
 	else
 	{
 		@unlink($destName . '.tmp');
-		@touch($destName);
 		return false;
 	}
 }
@@ -186,6 +190,8 @@ function reencodeImage($fileName, $preferred_format = 0)
 
 	if (!rename($fileName . '.tmp', $fileName))
 		return false;
+
+	return true;
 }
 
 /**
@@ -228,6 +234,103 @@ function checkImageContents($fileName, $extensiveCheck = false)
 				return false;
 			}
 		}
+		$prev_chunk = $cur_chunk;
+	}
+	fclose($fp);
+
+	return true;
+}
+
+/**
+ * Searches through an SVG file to see if there's potentially harmful content.
+ *
+ * @param string $fileName The path to the file.
+ * @return bool Whether the image appears to be safe.
+ */
+function checkSvgContents($fileName)
+{
+	$fp = fopen($fileName, 'rb');
+	if (!$fp)
+		fatal_lang_error('attach_timeout');
+
+	// The patterns below match UTF-8 and ASCII bytes. UTF-16 and UTF-32
+	// encode ASCII characters with NUL bytes, so the markup would not match.
+	$head = fread($fp, 8192);
+	if ($head === false || strpos($head, "\0") !== false)
+	{
+		fclose($fp);
+		return false;
+	}
+
+	// XML defaults to UTF-8. Reject a declaration that names another encoding,
+	// because the patterns cannot see markup encoded another way.
+	if (preg_match('/^(?:\xEF\xBB\xBF)?\s*<\?xml\s[^>]*\bencoding\s*=\s*(["\'])([^"\']+)\1/i', $head, $matches)
+		&& !in_array(trim(strtolower($matches[2])), array('utf-8', 'us-ascii', 'ascii')))
+	{
+		fclose($fp);
+		return false;
+	}
+
+	// A declaration that does not end in the first chunk could hide its
+	// encoding attribute from the check above.
+	if (preg_match('/^(?:\xEF\xBB\xBF)?\s*<\?xml\s/i', $head) && strpos($head, '?>') === false)
+	{
+		fclose($fp);
+		return false;
+	}
+
+	rewind($fp);
+
+	$patterns = array(
+		// No external or embedded scripts allowed.
+		'/<(\S*:)?script\b/i',
+		'/\b(\S:)?href\s*=\s*["\']\s*javascript:/i',
+
+		// No SVG event attributes allowed, since they execute scripts.
+		'/\bon\w+\s*=\s*["\']/i',
+		'/<(\S*:)?(set|animate(Motion|Transform)?)\b[^>]*\battributeName\s*=\s*(["\'])\s*(on\w+|(\S*:)?href)\\1/i',
+
+		// No XML Events allowed, since they execute scripts.
+		'~\bhttp://www\.w3\.org/2001/xml-events\b~i',
+
+		// No data URIs allowed, since they contain arbitrary data.
+		'/\b(\S*:)?href\s*=\s*["\']\s*data:/i',
+
+		// No foreignObjects allowed, since they allow embedded HTML.
+		'/<(\S*:)?foreignObject\b/i',
+
+		// No custom entities allowed, since they can be used for entity
+		// recursion attacks.
+		'/<!ENTITY\b/',
+
+		// Embedded external images can't have custom cross-origin rules.
+		'/<\b(\S*:)?image\b[^>]*\bcrossorigin\s*=/i',
+
+		// No embedded PHP tags allowed.
+		// Harmless if the SVG is just the src of an img element, but very bad
+		// if the SVG is embedded inline into the HTML document.
+		'/<[?](php|=|\s)/i',
+	);
+
+	$prev_chunk = '';
+	while (!feof($fp))
+	{
+		$cur_chunk = fread($fp, 8192);
+		if ($cur_chunk === false || strpos($cur_chunk, "\0") !== false)
+		{
+			fclose($fp);
+			return false;
+		}
+
+		foreach ($patterns as $pattern)
+		{
+			if (preg_match($pattern, $prev_chunk . $cur_chunk))
+			{
+				fclose($fp);
+				return false;
+			}
+		}
+
 		$prev_chunk = $cur_chunk;
 	}
 	fclose($fp);
@@ -327,7 +430,8 @@ function resizeImageFile($source, $destination, $max_width, $max_height, $prefer
 		'2' => 'jpeg',
 		'3' => 'png',
 		'6' => 'bmp',
-		'15' => 'wbmp'
+		'15' => 'wbmp',
+		'18' => 'webp'
 	);
 
 	// Get the image file, we have to work with something after all
@@ -426,7 +530,8 @@ function resizeImage($src_img, $destName, $src_width, $src_height, $max_width, $
 			'2' => 'jpeg',
 			'3' => 'png',
 			'6' => 'bmp',
-			'15' => 'wbmp'
+			'15' => 'wbmp',
+			'18' => 'webp'
 		);
 		$preferred_format = empty($preferred_format) || !isset($default_formats[$preferred_format]) ? 2 : $preferred_format;
 
@@ -557,6 +662,12 @@ function resizeImage($src_img, $destName, $src_width, $src_height, $max_width, $
 			$success = imagepng($dst_img, $destName);
 		elseif (!empty($preferred_format) && ($preferred_format == 1) && function_exists('imagegif'))
 			$success = imagegif($dst_img, $destName);
+		elseif (!empty($preferred_format) && ($preferred_format == 6) && function_exists('imagebmp'))
+			$success = imagebmp($dst_img, $destName);
+		elseif (!empty($preferred_format) && ($preferred_format == 15) && function_exists('imagewbmp'))
+			$success = imagewbmp($dst_img, $destName);
+		elseif (!empty($preferred_format) && ($preferred_format == 18) && function_exists('imagewebp'))
+			$success = imagewebp($dst_img, $destName);
 		elseif (function_exists('imagejpeg'))
 			$success = imagejpeg($dst_img, $destName, !empty($modSettings['avatar_jpeg_quality']) ? $modSettings['avatar_jpeg_quality'] : 82);
 
@@ -1169,7 +1280,9 @@ function showCodeImage($code)
 	}
 
 	// Bail out.
-	imagedestroy($code_image);
+	if (version_compare(PHP_VERSION, '8.0.0', '<')) {
+		imagedestroy($code_image);
+	}
 	die();
 }
 
@@ -1211,6 +1324,131 @@ function showLetterImage($letter)
 
 	// Nothing more to come.
 	die();
+}
+
+/**
+ * Gets the dimensions of an SVG image (specifically, of its viewport).
+ *
+ * See https://www.w3.org/TR/SVG11/coords.html#IntrinsicSizing
+ *
+ * @param string $filepath The path to the SVG file.
+ * @return array The width and height of the SVG image in pixels.
+ */
+function getSvgSize($filepath)
+{
+	if (!preg_match('/<svg\b[^>]*>/', file_get_contents($filepath, false, null, 0, 480), $matches))
+	{
+		return array('width' => 0, 'height' => 0);
+	}
+
+	$svg = $matches[0];
+
+	// If the SVG has width and height attributes, use those.
+	// If attribute is missing, SVG spec says the default is '100%'.
+	// If no unit is supplied, spec says unit defaults to px.
+	foreach (array('width', 'height') as $dimension)
+	{
+		if (preg_match("/\b$dimension\s*=\s*([\"'])\s*([\d.]+)([\D\S]*)\s*\\1/", $svg, $matches))
+		{
+			$$dimension = $matches[2];
+			$unit = !empty($matches[3]) ? $matches[3] : 'px';
+		}
+		else
+		{
+			$$dimension = 100;
+			$unit = '%';
+		}
+
+		// Resolve unit.
+		switch ($unit)
+		{
+			// Already pixels, so do nothing.
+			case 'px':
+				break;
+
+			// Points.
+			case 'pt':
+				$$dimension *= 0.75;
+				break;
+
+			// Picas.
+			case 'pc':
+				$$dimension *= 16;
+				break;
+
+			// Inches.
+			case 'in':
+				$$dimension *= 96;
+				break;
+
+			// Centimetres.
+			case 'cm':
+				$$dimension *= 37.8;
+				break;
+
+			// Millimetres.
+			case 'mm':
+				$$dimension *= 3.78;
+				break;
+
+			// Font height.
+			// Assume browser default of 1em = 1pc.
+			case 'em':
+				$$dimension *= 16;
+				break;
+
+			// Font x-height.
+			// Assume half of font height.
+			case 'ex':
+				$$dimension *= 8;
+				break;
+
+			// Font '0' character width.
+			// Assume a typical monospace font at 1em = 1pc.
+			case 'ch':
+				$$dimension *= 9.6;
+				break;
+
+			// Percentage.
+			// SVG spec says to use viewBox dimensions in this case.
+			default:
+				unset($$dimension);
+				break;
+		}
+	}
+
+	// Width and/or height is missing or a percentage, so try the viewBox attribute.
+	if ((!isset($width) || !isset($height)) && preg_match('/\bviewBox\s*=\s*(["\'])\s*[\d.]+[,\s]+[\d.]+[,\s]+([\d.]+)[,\s]+([\d.]+)\s*\\1/', $svg, $matches))
+	{
+		$vb_width = $matches[2];
+		$vb_height = $matches[3];
+
+		// No dimensions given, so use viewBox dimensions.
+		if (!isset($width) && !isset($height))
+		{
+			$width = $vb_width;
+			$height = $vb_height;
+		}
+		// Width but no height, so calculate height.
+		elseif (isset($width))
+		{
+			$height = $width * $vb_height / $vb_width;
+		}
+		// Height but no width, so calculate width.
+		elseif (isset($height))
+		{
+			$width = $height * $vb_width / $vb_height;
+		}
+	}
+
+	// Viewport undefined, so call it infinite.
+	if (!isset($width) && !isset($height))
+	{
+		$width = INF;
+		$height = INF;
+	}
+
+	return array('width' => round($width), 'height' => round($height));
 }
 
 ?>

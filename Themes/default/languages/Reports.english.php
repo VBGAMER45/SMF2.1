@@ -1,5 +1,5 @@
 <?php
-// Version: 2.1 RC4; Reports
+// Version: 2.1.7; Reports
 
 $txt['generate_reports_desc'] = 'From this section you can generate a variety of reports to assist in the administration of your forum. Simply follow the steps below to select the option of your choice.';
 $txt['generate_reports_continue'] = 'Continue';
@@ -15,7 +15,6 @@ $txt['gr_type_desc_group_perms'] = 'Report on the permissions each membergroup h
 $txt['gr_type_staff'] = 'Staff';
 $txt['gr_type_desc_staff'] = 'This report summarizes all members who currently have positions of authority on the forum.';
 
-$txt['full_member'] = 'Full Member';
 $txt['global_boards'] = 'Global Boards';
 $txt['results'] = 'Results';
 
@@ -58,7 +57,6 @@ $txt['board_perms_name_post_unapproved_topics'] = 'Post unapproved topics';
 $txt['board_perms_name_post_unapproved_replies_any'] = 'Post unapproved replies in any topic';
 $txt['board_perms_name_post_unapproved_replies_own'] = 'Post unapproved replies in own topic';
 $txt['board_perms_name_post_draft'] = 'Save drafts of posts';
-$txt['board_perms_name_post_autosave_draft'] = 'Automatically save drafts of posts';
 $txt['board_perms_name_remove_any'] = 'Remove any topic';
 $txt['board_perms_name_remove_own'] = 'Remove own topics';
 $txt['board_perms_name_report_any'] = 'Report any post';
@@ -111,8 +109,8 @@ $txt['group_perms_name_manage_smileys'] = 'Manage smileys and message icons';
 $txt['group_perms_name_moderate_forum'] = 'Moderate the forum';
 $txt['group_perms_name_pm_read'] = 'Read personal messages';
 $txt['group_perms_name_pm_send'] = 'Send personal messages';
-$txt['group_perms_name_pm_draft'] = 'Save draft personal messages';
-$txt['group_perms_name_pm_autosave_draft'] = 'Automatically save draft personal messages';
+$txt['group_perms_name_pm_draft'] = 'Save drafts of personal messages';
+$txt['group_perms_name_pm_autosave_draft'] = 'Automatically save drafts of personal messages';
 $txt['group_perms_name_profile_extra_any'] = 'Edit any additional options';
 $txt['group_perms_name_profile_extra_own'] = 'Edit own additional options';
 $txt['group_perms_name_profile_identity_any'] = 'Edit any account settings';
@@ -120,6 +118,7 @@ $txt['group_perms_name_profile_identity_own'] = 'Edit own account settings';
 $txt['group_perms_name_profile_server_avatar'] = 'Select a server avatar';
 $txt['group_perms_name_profile_upload_avatar'] = 'Upload an avatar';
 $txt['group_perms_name_profile_remote_avatar'] = 'Choose a remote avatar';
+$txt['group_perms_name_profile_gravatar'] = 'Use a Gravatar';
 $txt['group_perms_name_profile_remove_any'] = 'Delete any account';
 $txt['group_perms_name_profile_remove_own'] = 'Delete own account';
 $txt['group_perms_name_profile_title_any'] = 'Edit any custom title';

@@ -7,10 +7,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 if (!defined('SMF'))
@@ -137,7 +137,7 @@ class xmlArray
 	 *
 	 * @param $path string The path to the element to get
 	 * @param $return_full bool Whether to return the full result set
-	 * @return xmlArray, a new xmlArray.
+	 * @return xmlArray a new xmlArray.
 	 */
 	public function path($path, $return_full = false)
 	{
@@ -363,10 +363,10 @@ class xmlArray
 		);
 
 		// Loop until we're out of data.
-		while ($data != '')
+		while ($data !== '')
 		{
 			// Find and remove the next tag.
-			preg_match('/\A<([\w\-:]+)((?:\s+.+?)?)([\s]?\/)?' . '>/', $data, $match);
+			preg_match('/\A<([\w\-:]+)((?:\s+[\s\S]+?)?)([\s]?\/)?' . '>/', $data, $match);
 			if (isset($match[0]))
 				$data = preg_replace('/' . preg_quote($match[0], '/') . '/s', '', $data, 1);
 

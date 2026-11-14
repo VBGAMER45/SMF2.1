@@ -7,10 +7,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2026 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.8
  */
 
 use SMF\Cache\CacheApi;
@@ -29,13 +29,14 @@ function reloadSettings()
 	global $image_proxy_enabled;
 
 	// Most database systems have not set UTF-8 as their default input charset.
-	if (!empty($db_character_set))
-		$smcFunc['db_query']('', '
-			SET NAMES {string:db_character_set}',
-			array(
-				'db_character_set' => $db_character_set,
-			)
-		);
+	if (empty($db_character_set))
+		$db_character_set = 'utf8';
+	$smcFunc['db_query']('', '
+		SET NAMES {string:db_character_set}',
+		array(
+			'db_character_set' => $db_character_set,
+		)
+	);
 
 	// We need some caching support, maybe.
 	loadCacheAccelerator();
@@ -108,16 +109,18 @@ function reloadSettings()
 	$ent_list = '&(?:#' . (empty($modSettings['disableEntityCheck']) ? '\d{1,7}' : '021') . '|quot|amp|lt|gt|nbsp);';
 	$ent_check = empty($modSettings['disableEntityCheck']) ? function($string)
 		{
-			$string = preg_replace_callback('~(&#(\d{1,7}|x[0-9a-fA-F]{1,6});)~', 'entity_fix__callback', $string);
+			$string = preg_replace_callback('~(&#(\d{1,7}|x[0-9a-fA-F]{1,6});)~', 'entity_fix__callback', (string) $string);
 			return $string;
 		} : function($string)
 		{
-			return $string;
+			return (string) $string;
 		};
-	$fix_utf8mb4 = function($string) use ($utf8, $smcFunc)
+	$smcFunc['fix_utf8mb4'] = function($string) use ($utf8, $smcFunc)
 	{
 		if (!$utf8 || $smcFunc['db_mb4'])
 			return $string;
+
+		$string = (string) $string;
 
 		$i = 0;
 		$len = strlen($string);
@@ -161,9 +164,11 @@ function reloadSettings()
 			$num = $string[0] === 'x' ? hexdec(substr($string, 1)) : (int) $string;
 			return $num < 0x20 || $num > 0x10FFFF || ($num >= 0xD800 && $num <= 0xDFFF) || $num === 0x202E || $num === 0x202D ? '' : '&#' . $num . ';';
 		},
-		'htmlspecialchars' => function($string, $quote_style = ENT_COMPAT, $charset = 'ISO-8859-1') use ($ent_check, $utf8, $fix_utf8mb4)
+		'htmlspecialchars' => function($string, $quote_style = ENT_COMPAT, $charset = 'ISO-8859-1') use ($ent_check, $utf8, &$smcFunc)
 		{
-			return $fix_utf8mb4($ent_check(htmlspecialchars($string, $quote_style, $utf8 ? 'UTF-8' : $charset)));
+			$string = $smcFunc['normalize']($string);
+
+			return $smcFunc['fix_utf8mb4']($ent_check(htmlspecialchars($string, $quote_style, $utf8 ? 'UTF-8' : $charset)));
 		},
 		'htmltrim' => function($string) use ($utf8, $ent_check)
 		{
@@ -206,48 +211,94 @@ function reloadSettings()
 			$ent_arr = preg_split('~(' . $ent_list . '|.)~' . ($utf8 ? 'u' : '') . '', $ent_check($string), -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY);
 			return $length === null ? implode('', array_slice($ent_arr, $start)) : implode('', array_slice($ent_arr, $start, $length));
 		},
-		'strtolower' => $utf8 ? function($string) use ($sourcedir)
+		'strtolower' => function($string) use (&$smcFunc)
 		{
-			if (!function_exists('mb_strtolower'))
-			{
-				require_once($sourcedir . '/Subs-Charset.php');
-				return utf8_strtolower($string);
-			}
-
-			return mb_strtolower($string, 'UTF-8');
-		} : 'strtolower',
-		'strtoupper' => $utf8 ? function($string)
+			return $smcFunc['convert_case']($string, 'lower');
+		},
+		'strtoupper' => function($string) use (&$smcFunc)
 		{
-			global $sourcedir;
-
-			if (!function_exists('mb_strtolower'))
-			{
-				require_once($sourcedir . '/Subs-Charset.php');
-				return utf8_strtoupper($string);
-			}
-
-			return mb_strtoupper($string, 'UTF-8');
-		} : 'strtoupper',
+			return $smcFunc['convert_case']($string, 'upper');
+		},
 		'truncate' => function($string, $length) use ($utf8, $ent_check, $ent_list, &$smcFunc)
 		{
 			$string = $ent_check($string);
-			preg_match('~^(' . $ent_list . '|.){' . $smcFunc['strlen'](substr($string, 0, $length)) . '}~' . ($utf8 ? 'u' : ''), $string, $matches);
+			preg_match('~^(' . $ent_list . '|.){' . $smcFunc['strlen']($smcFunc['substr']($string, 0, $length)) . '}~' . ($utf8 ? 'u' : ''), $string, $matches);
 			$string = $matches[0];
-			while (strlen($string) > $length)
+			while ($smcFunc['strlen']($string) > $length)
 				$string = preg_replace('~(?:' . $ent_list . '|.)$~' . ($utf8 ? 'u' : ''), '', $string);
 			return $string;
 		},
-		'ucfirst' => $utf8 ? function($string) use (&$smcFunc)
+		'ucfirst' => function($string) use (&$smcFunc)
 		{
-			return $smcFunc['strtoupper']($smcFunc['substr']($string, 0, 1)) . $smcFunc['substr']($string, 1);
-		} : 'ucfirst',
-		'ucwords' => $utf8 ? function($string) use (&$smcFunc)
+			return $smcFunc['convert_case']($string, 'ucfirst');
+		},
+		'ucwords' => function($string) use (&$smcFunc)
 		{
-			$words = preg_split('~([\s\r\n\t]+)~', $string, -1, PREG_SPLIT_DELIM_CAPTURE);
-			for ($i = 0, $n = count($words); $i < $n; $i += 2)
-				$words[$i] = $smcFunc['ucfirst']($words[$i]);
-			return implode('', $words);
-		} : 'ucwords',
+			return $smcFunc['convert_case']($string, 'ucwords');
+		},
+		'convert_case' => function($string, $case, $simple = false, $form = 'c') use (&$smcFunc, $utf8, $ent_check, $sourcedir)
+		{
+			if (!$utf8)
+			{
+				switch ($case)
+				{
+					case 'upper':
+						$string = strtoupper($string);
+						break;
+
+					case 'lower':
+					case 'fold':
+						$string = strtolower($string);
+						break;
+
+					case 'title':
+						$string = ucwords(strtolower($string));
+						break;
+
+					case 'ucwords':
+						$string = ucwords($string);
+						break;
+
+					case 'ucfirst':
+						$string = ucfirst($string);
+						break;
+
+					default:
+						break;
+				}
+			}
+			else
+			{
+				// Convert numeric entities to characters, except special ones.
+				if (function_exists('mb_decode_numericentity') && strpos($string, '&#') !== false)
+				{
+					$string = strtr($ent_check($string), array(
+						'&#34;' => '&quot;',
+						'&#38;' => '&amp;',
+						'&#39;' => '&apos;',
+						'&#60;' => '&lt;',
+						'&#62;' => '&gt;',
+						'&#160;' => '&nbsp;',
+					));
+
+					$string = mb_decode_numericentity($string, array(0, 0x10FFFF, 0, 0xFFFFFF), 'UTF-8');
+				}
+
+				// Use optmized function for compatibility casefolding.
+				if ($form === 'kc_casefold' || ($case === 'fold' && $form === 'kc'))
+				{
+					$string = $smcFunc['normalize']($string, 'kc_casefold');
+				}
+				// Everything else.
+				else
+				{
+					require_once($sourcedir . '/Subs-Charset.php');
+					$string = $smcFunc['normalize'](utf8_convert_case($string, $case, $simple), $form);
+				}
+			}
+
+			return $smcFunc['fix_utf8mb4']($string);
+		},
 		'json_decode' => 'smf_json_decode',
 		'json_encode' => 'json_encode',
 		'random_int' => function($min = 0, $max = PHP_INT_MAX)
@@ -272,6 +323,24 @@ function reloadSettings()
 
 			return random_bytes($length);
 		},
+		'normalize' => function($string, $form = 'c') use ($utf8)
+		{
+			global $sourcedir;
+
+			$string = (string) $string;
+
+			if (!$utf8)
+				return $string;
+
+			require_once($sourcedir . '/Subs-Charset.php');
+
+			$normalize_func = 'utf8_normalize_' . strtolower((string) $form);
+
+			if (!function_exists($normalize_func))
+				return false;
+
+			return $normalize_func($string);
+		},
 	);
 
 	// Setting the timezone is a requirement for some functions.
@@ -289,8 +358,11 @@ function reloadSettings()
 		// If date.timezone is unset, invalid, or just plain weird, make a best guess
 		if (!in_array($modSettings['default_timezone'], timezone_identifiers_list()))
 		{
-			$server_offset = @mktime(0, 0, 0, 1, 1, 1970);
+			$server_offset = @mktime(0, 0, 0, 1, 1, 1970) * -1;
 			$modSettings['default_timezone'] = timezone_name_from_abbr('', $server_offset, 0);
+
+			if (empty($modSettings['default_timezone']))
+				$modSettings['default_timezone'] = 'UTC';
 		}
 
 		date_default_timezone_set($modSettings['default_timezone']);
@@ -304,7 +376,7 @@ function reloadSettings()
 			$modSettings['load_average'] = @file_get_contents('/proc/loadavg');
 			if (!empty($modSettings['load_average']) && preg_match('~^([^ ]+?) ([^ ]+?) ([^ ]+)~', $modSettings['load_average'], $matches) != 0)
 				$modSettings['load_average'] = (float) $matches[1];
-			elseif (($modSettings['load_average'] = @`uptime`) != null && preg_match('~load average[s]?: (\d+\.\d+), (\d+\.\d+), (\d+\.\d+)~i', $modSettings['load_average'], $matches) != 0)
+			elseif (($modSettings['load_average'] = @shell_exec('uptime')) != null && preg_match('~load average[s]?: (\d+\.\d+), (\d+\.\d+), (\d+\.\d+)~i', $modSettings['load_average'], $matches) != 0)
 				$modSettings['load_average'] = (float) $matches[1];
 			else
 				unset($modSettings['load_average']);
@@ -348,6 +420,7 @@ function reloadSettings()
 	$file_max_kb = floor(memoryReturnBytes(ini_get('upload_max_filesize')) / 1024);
 	$modSettings['attachmentPostLimit'] = empty($modSettings['attachmentPostLimit']) ? $post_max_kb : min($modSettings['attachmentPostLimit'], $post_max_kb);
 	$modSettings['attachmentSizeLimit'] = empty($modSettings['attachmentSizeLimit']) ? $file_max_kb : min($modSettings['attachmentSizeLimit'], $file_max_kb);
+	$modSettings['attachmentNumPerPostLimit'] = !isset($modSettings['attachmentNumPerPostLimit']) ? 4 : $modSettings['attachmentNumPerPostLimit'];
 
 	// Integration is cool.
 	if (defined('SMF_INTEGRATION_SETTINGS'))
@@ -418,12 +491,13 @@ function reloadSettings()
 		IMAGETYPE_BMP => 'bmp',
 		IMAGETYPE_TIFF_II => 'tiff',
 		IMAGETYPE_TIFF_MM => 'tiff',
-		IMAGETYPE_IFF => 'iff'
+		IMAGETYPE_IFF => 'iff',
+		IMAGETYPE_WEBP => 'webp'
 	);
 
 	// Define a list of allowed tags for descriptions.
 	$context['description_allowed_tags'] = array(
-		'abbr', 'anchor', 'b', 'center', 'color', 'font', 'hr', 'i', 'img',
+		'abbr', 'anchor', 'b', 'br', 'center', 'color', 'font', 'hr', 'i', 'img',
 		'iurl', 'left', 'li', 'list', 'ltr', 'pre', 'right', 's', 'sub',
 		'sup', 'table', 'td', 'tr', 'u', 'url',
 	);
@@ -658,7 +732,16 @@ function loadUserSettings()
 			$area = !empty($_REQUEST['area']) ? $_REQUEST['area'] : '';
 			$action = !empty($_REQUEST['action']) ? $_REQUEST['action'] : '';
 
-			if ($row['total'] > 0 && !in_array($action, array('profile', 'logout')) || ($action == 'profile' && $area != 'tfasetup'))
+			if (
+				$row['total'] > 0
+				&& (
+					!in_array($action, array('profile', 'logout'))
+					|| (
+						$action == 'profile'
+						&& $area != 'tfasetup'
+					)
+				)
+			)
 				redirectexit('action=profile;area=tfasetup;forced');
 		}
 	}
@@ -731,16 +814,28 @@ function loadUserSettings()
 		if (!empty($user_settings['timezone']))
 		{
 			// Get the offsets from UTC for the server, then for the user.
-			$tz_system = new DateTimeZone(@date_default_timezone_get());
+			$tz_system = new DateTimeZone($modSettings['default_timezone']);
 			$tz_user = new DateTimeZone($user_settings['timezone']);
 			$time_system = new DateTime('now', $tz_system);
 			$time_user = new DateTime('now', $tz_user);
-			$user_info['time_offset'] = ($tz_user->getOffset($time_user) - $tz_system->getOffset($time_system)) / 3600;
+			$user_settings['time_offset'] = ($tz_user->getOffset($time_user) - $tz_system->getOffset($time_system)) / 3600;
 		}
+		// We need a time zone.
 		else
 		{
-			// !!! Compatibility.
-			$user_info['time_offset'] = empty($user_settings['time_offset']) ? 0 : $user_settings['time_offset'];
+			if (!empty($user_settings['time_offset']))
+			{
+				$tz_system = new DateTimeZone($modSettings['default_timezone']);
+				$time_system = new DateTime('now', $tz_system);
+
+				$user_settings['timezone'] = @timezone_name_from_abbr('', $tz_system->getOffset($time_system) + $user_settings['time_offset'] * 3600, (int) $time_system->format('I'));
+			}
+
+			if (empty($user_settings['timezone']))
+			{
+				$user_settings['timezone'] = $modSettings['default_timezone'];
+				$user_settings['time_offset'] = 0;
+			}
 		}
 	}
 	// If the user is a guest, initialize all the critical user settings.
@@ -751,7 +846,7 @@ function loadUserSettings()
 		$user_info = array('groups' => array(-1));
 		$user_settings = array();
 
-		if (isset($_COOKIE[$cookiename]) && empty($context['tfa_member']))
+		if (isset($_COOKIE[$cookiename]) && empty($context['tfa_member']) && (!isset($_REQUEST['action']) || !in_array($_REQUEST['action'], array('signup', 'signup2', 'login', 'login2'))))
 			$_COOKIE[$cookiename] = '';
 
 		// Expire the 2FA cookie
@@ -789,8 +884,8 @@ function loadUserSettings()
 			$user_info['possibly_robot'] = (strpos($_SERVER['HTTP_USER_AGENT'], 'Mozilla') === false && strpos($_SERVER['HTTP_USER_AGENT'], 'Opera') === false) || strpos($ci_user_agent, 'googlebot') !== false || strpos($ci_user_agent, 'slurp') !== false || strpos($ci_user_agent, 'crawl') !== false || strpos($ci_user_agent, 'bingbot') !== false || strpos($ci_user_agent, 'bingpreview') !== false || strpos($ci_user_agent, 'adidxbot') !== false || strpos($ci_user_agent, 'msnbot') !== false;
 		}
 
-		// We don't know the offset...
-		$user_info['time_offset'] = 0;
+		$user_settings['timezone'] = $modSettings['default_timezone'];
+		$user_settings['time_offset'] = 0;
 	}
 
 	// Set up the $user_info array.
@@ -809,6 +904,8 @@ function loadUserSettings()
 		'ip2' => $_SERVER['BAN_CHECK_IP'],
 		'posts' => empty($user_settings['posts']) ? 0 : $user_settings['posts'],
 		'time_format' => empty($user_settings['time_format']) ? $modSettings['time_format'] : $user_settings['time_format'],
+		'timezone' => $user_settings['timezone'],
+		'time_offset' => $user_settings['time_offset'],
 		'avatar' => array(
 			'url' => isset($user_settings['avatar']) ? $user_settings['avatar'] : '',
 			'filename' => empty($user_settings['filename']) ? '' : $user_settings['filename'],
@@ -841,7 +938,7 @@ function loadUserSettings()
 		$languages = getLanguages();
 
 		// Is it valid?
-		if (!empty($_GET['language']) && isset($languages[strtr($_GET['language'], './\\:', '____')]))
+		if (!empty($_GET['language']) && is_string($_GET['language']) && isset($languages[strtr($_GET['language'], './\\:', '____')]))
 		{
 			$user_info['language'] = strtr($_GET['language'], './\\:', '____');
 
@@ -879,7 +976,7 @@ function loadUserSettings()
  */
 function loadMinUserInfo($user_ids = array())
 {
-	global $smcFunc, $modSettings, $language;
+	global $smcFunc, $modSettings, $language, $modSettings;
 	static $user_info_min = array();
 
 	$user_ids = (array) $user_ids;
@@ -941,16 +1038,32 @@ function loadMinUserInfo($user_ids = array())
 
 		if (!empty($row['timezone']))
 		{
-			$tz_system = new \DateTimeZone(@date_default_timezone_get());
+			$tz_system = new \DateTimeZone($modSettings['default_timezone']);
 			$tz_user = new \DateTimeZone($row['timezone']);
 			$time_system = new \DateTime('now', $tz_system);
 			$time_user = new \DateTime('now', $tz_user);
-			$user_info_min[$row['id_member']]['time_offset'] = ($tz_user->getOffset($time_user) -
+			$row['time_offset'] = ($tz_user->getOffset($time_user) -
 					$tz_system->getOffset($time_system)) / 3600;
 		}
-
 		else
-			$user_info_min[$row['id_member']]['time_offset'] = empty($row['time_offset']) ? 0 : $row['time_offset'];
+		{
+			if (!empty($row['time_offset']))
+			{
+				$tz_system = new \DateTimeZone($modSettings['default_timezone']);
+				$time_system = new \DateTime('now', $tz_system);
+
+				$row['timezone'] = @timezone_name_from_abbr('', $tz_system->getOffset($time_system) + $row['time_offset'] * 3600, (int) $time_system->format('I'));
+			}
+
+			if (empty($row['timezone']))
+			{
+				$row['timezone'] = $modSettings['default_timezone'];
+				$row['time_offset'] = 0;
+			}
+		}
+
+		$user_info_min[$row['id_member']]['timezone'] = $row['timezone'];
+		$user_info_min[$row['id_member']]['time_offset'] = $row['time_offset'];
 	}
 
 	$smcFunc['db_free_result']($request);
@@ -1638,7 +1751,7 @@ function loadMemberContext($user, $display_custom_fields = false)
 		'email' => $profile['email_address'],
 		'show_email' => !$user_info['is_guest'] && ($user_info['id'] == $profile['id_member'] || allowedTo('moderate_forum')),
 		'registered' => empty($profile['date_registered']) ? $txt['not_applicable'] : timeformat($profile['date_registered']),
-		'registered_timestamp' => empty($profile['date_registered']) ? 0 : forum_time(true, $profile['date_registered']),
+		'registered_timestamp' => empty($profile['date_registered']) ? 0 : $profile['date_registered'],
 	);
 
 	// If the set isn't minimal then load the monstrous array.
@@ -1650,7 +1763,7 @@ function loadMemberContext($user, $display_custom_fields = false)
 
 		// Set things up to be used before hand.
 		$profile['signature'] = str_replace(array("\n", "\r"), array('<br>', ''), $profile['signature']);
-		$profile['signature'] = parse_bbc($profile['signature'], true, 'sig' . $profile['id_member']);
+		$profile['signature'] = parse_bbc($profile['signature'], true, 'sig' . $profile['id_member'], get_signature_allowed_bbc_tags());
 
 		$profile['is_online'] = (!empty($profile['show_online']) || allowedTo('moderate_forum')) && $profile['is_online'] > 0;
 		$profile['icons'] = empty($profile['icons']) ? array('', '') : explode('#', $profile['icons']);
@@ -1674,17 +1787,28 @@ function loadMemberContext($user, $display_custom_fields = false)
 		if (!empty($profile['timezone']))
 		{
 			// Get the offsets from UTC for the server, then for the user.
-			$tz_system = new DateTimeZone(@date_default_timezone_get());
+			$tz_system = new DateTimeZone($modSettings['default_timezone']);
 			$tz_user = new DateTimeZone($profile['timezone']);
 			$time_system = new DateTime('now', $tz_system);
 			$time_user = new DateTime('now', $tz_user);
 			$profile['time_offset'] = ($tz_user->getOffset($time_user) - $tz_system->getOffset($time_system)) / 3600;
 		}
-
+		// We need a time zone.
 		else
 		{
-			// !!! Compatibility.
-			$profile['time_offset'] = empty($profile['time_offset']) ? 0 : $profile['time_offset'];
+			if (!empty($profile['time_offset']))
+			{
+				$tz_system = new DateTimeZone($modSettings['default_timezone']);
+				$time_system = new DateTime('now', $tz_system);
+
+				$profile['timezone'] = @timezone_name_from_abbr('', $tz_system->getOffset($time_system) + $profile['time_offset'] * 3600, (int) $time_system->format('I'));
+			}
+
+			if (empty($profile['timezone']))
+			{
+				$profile['timezone'] = $modSettings['default_timezone'];
+				$profile['time_offset'] = 0;
+			}
 		}
 
 		$memberContext[$user] += array(
@@ -1705,7 +1829,7 @@ function loadMemberContext($user, $display_custom_fields = false)
 			'real_posts' => $profile['posts'],
 			'posts' => $profile['posts'] > 500000 ? $txt['geek'] : comma_format($profile['posts']),
 			'last_login' => empty($profile['last_login']) ? $txt['never'] : timeformat($profile['last_login']),
-			'last_login_timestamp' => empty($profile['last_login']) ? 0 : forum_time(0, $profile['last_login']),
+			'last_login_timestamp' => empty($profile['last_login']) ? 0 : $profile['last_login'],
 			'ip' => $smcFunc['htmlspecialchars']($profile['member_ip']),
 			'ip2' => $smcFunc['htmlspecialchars']($profile['member_ip2']),
 			'online' => array(
@@ -1730,7 +1854,7 @@ function loadMemberContext($user, $display_custom_fields = false)
 			'group_icons' => str_repeat('<img src="' . str_replace('$language', $context['user']['language'], isset($profile['icons'][1]) ? $group_icon_url : '') . '" alt="*">', empty($profile['icons'][0]) || empty($profile['icons'][1]) ? 0 : $profile['icons'][0]),
 			'warning' => $profile['warning'],
 			'warning_status' => !empty($modSettings['warning_mute']) && $modSettings['warning_mute'] <= $profile['warning'] ? 'mute' : (!empty($modSettings['warning_moderate']) && $modSettings['warning_moderate'] <= $profile['warning'] ? 'moderate' : (!empty($modSettings['warning_watch']) && $modSettings['warning_watch'] <= $profile['warning'] ? 'watch' : (''))),
-			'local_time' => timeformat(time() + ($profile['time_offset'] - $user_info['time_offset']) * 3600, false),
+			'local_time' => timeformat(time(), false, $profile['timezone']),
 			'custom_fields' => array(),
 		);
 	}
@@ -1784,19 +1908,21 @@ function loadMemberContext($user, $display_custom_fields = false)
 				$value = $value ? $txt['yes'] : $txt['no'];
 
 			// Enclosing the user input within some other text?
+			$simple_value = $value;
 			if (!empty($custom['enclose']))
 				$value = strtr($custom['enclose'], array(
 					'{SCRIPTURL}' => $scripturl,
 					'{IMAGES_URL}' => $settings['images_url'],
 					'{DEFAULT_IMAGES_URL}' => $settings['default_images_url'],
-					'{INPUT}' => $value,
+					'{INPUT}' => tokenTxtReplace($value),
 					'{KEY}' => $currentKey,
 				));
 
 			$memberContext[$user]['custom_fields'][] = array(
-				'title' => !empty($custom['title']) ? $custom['title'] : $custom['col_name'],
-				'col_name' => $custom['col_name'],
-				'value' => un_htmlspecialchars($value),
+				'title' => tokenTxtReplace(!empty($custom['title']) ? $custom['title'] : $custom['col_name']),
+				'col_name' => tokenTxtReplace($custom['col_name']),
+				'value' => un_htmlspecialchars(tokenTxtReplace($value)),
+				'simple' => tokenTxtReplace($simple_value),
 				'raw' => $profile['options'][$custom['col_name']],
 				'placement' => !empty($custom['placement']) ? $custom['placement'] : 0,
 			);
@@ -1826,8 +1952,8 @@ function loadMemberCustomFields($users, $params)
 		return false;
 
 	// Make sure it's an array.
-	$users = !is_array($users) ? array($users) : array_unique($users);
-	$params = !is_array($params) ? array($params) : array_unique($params);
+	$users = (array) array_unique($users);
+	$params = (array) array_unique($params);
 	$return = array();
 
 	$request = $smcFunc['db_query']('', '
@@ -1848,6 +1974,8 @@ function loadMemberCustomFields($users, $params)
 	{
 		$fieldOptions = array();
 		$currentKey = 0;
+		$row['field_name'] = tokenTxtReplace($row['field_name']);
+		$row['field_desc'] = tokenTxtReplace($row['field_desc']);
 
 		// Create a key => value array for multiple options fields
 		if (!empty($row['field_options']))
@@ -2243,6 +2371,7 @@ function loadTheme($id_theme = 0, $initialize = true)
 			'ignoreusers' => array(),
 			'possibly_robot' => true,
 			'time_offset' => 0,
+			'timezone' => $modSettings['default_timezone'],
 			'time_format' => $modSettings['time_format'],
 		);
 	}
@@ -2330,8 +2459,8 @@ function loadTheme($id_theme = 0, $initialize = true)
 	call_integration_hook('integrate_simple_actions', array(&$simpleActions, &$simpleAreas, &$simpleSubActions, &$extraParams, &$xmlActions));
 
 	$context['simple_action'] = in_array($context['current_action'], $simpleActions) ||
-		(isset($simpleAreas[$context['current_action']]) && isset($_REQUEST['area']) && in_array($_REQUEST['area'], $simpleAreas[$context['current_action']])) ||
-		(isset($simpleSubActions[$context['current_action']]) && in_array($context['current_subaction'], $simpleSubActions[$context['current_action']]));
+		(isset($context['current_action'], $simpleAreas[$context['current_action']]) && isset($_REQUEST['area']) && in_array($_REQUEST['area'], $simpleAreas[$context['current_action']])) ||
+		(isset($context['current_action'], $simpleSubActions[$context['current_action']]) && in_array($context['current_subaction'], $simpleSubActions[$context['current_action']]));
 
 	// See if theres any extra param to check.
 	$requiresXML = false;
@@ -2453,6 +2582,7 @@ function loadTheme($id_theme = 0, $initialize = true)
 		'smf_smileys_url' => '"' . $modSettings['smileys_url'] . '"',
 		'smf_smiley_sets' => '"' . $modSettings['smiley_sets_known'] . '"',
 		'smf_smiley_sets_default' => '"' . $modSettings['smiley_sets_default'] . '"',
+		'smf_avatars_url' => '"' . $modSettings['avatar_url'] . '"',
 		'smf_scripturl' => '"' . $scripturl . '"',
 		'smf_iso_case_folding' => $context['server']['iso_case_folding'] ? 'true' : 'false',
 		'smf_charset' => '"' . $context['character_set'] . '"',
@@ -2464,13 +2594,17 @@ function loadTheme($id_theme = 0, $initialize = true)
 		'banned_text' => JavaScriptEscape(sprintf($txt['your_ban'], $context['user']['name'])),
 		'smf_txt_expand' => JavaScriptEscape($txt['code_expand']),
 		'smf_txt_shrink' => JavaScriptEscape($txt['code_shrink']),
+		'smf_collapseAlt' => JavaScriptEscape($txt['hide']),
+		'smf_expandAlt' => JavaScriptEscape($txt['show']),
 		'smf_quote_expand' => !empty($modSettings['quote_expand']) ? $modSettings['quote_expand'] : 'false',
 		'allow_xhjr_credentials' => !empty($modSettings['allow_cors_credentials']) ? 'true' : 'false',
 	);
 
 	// Add the JQuery library to the list of files to load.
-	if (isset($modSettings['jquery_source']) && $modSettings['jquery_source'] == 'cdn')
-		loadJavaScriptFile('https://ajax.googleapis.com/ajax/libs/jquery/' . JQUERY_VERSION . '/jquery.min.js', array('external' => true, 'seed' => false), 'smf_jquery');
+	$jQueryUrls = array ('cdn' => 'https://ajax.googleapis.com/ajax/libs/jquery/'. JQUERY_VERSION . '/jquery.min.js', 'jquery_cdn' => 'https://code.jquery.com/jquery-'. JQUERY_VERSION . '.min.js', 'microsoft_cdn' => 'https://ajax.aspnetcdn.com/ajax/jQuery/jquery-'. JQUERY_VERSION . '.min.js');
+
+	if (isset($modSettings['jquery_source']) && array_key_exists($modSettings['jquery_source'], $jQueryUrls))
+		loadJavaScriptFile($jQueryUrls[$modSettings['jquery_source']], array('external' => true, 'seed' => false), 'smf_jquery');
 
 	elseif (isset($modSettings['jquery_source']) && $modSettings['jquery_source'] == 'local')
 		loadJavaScriptFile('jquery-' . JQUERY_VERSION . '.min.js', array('seed' => false), 'smf_jquery');
@@ -2478,7 +2612,7 @@ function loadTheme($id_theme = 0, $initialize = true)
 	elseif (isset($modSettings['jquery_source'], $modSettings['jquery_custom']) && $modSettings['jquery_source'] == 'custom')
 		loadJavaScriptFile($modSettings['jquery_custom'], array('external' => true, 'seed' => false), 'smf_jquery');
 
-	// Auto loading? template_javascript() will take care of the local half of this.
+	// Fall back to the forum default
 	else
 		loadJavaScriptFile('https://ajax.googleapis.com/ajax/libs/jquery/' . JQUERY_VERSION . '/jquery.min.js', array('external' => true, 'seed' => false), 'smf_jquery');
 
@@ -2494,34 +2628,6 @@ function loadTheme($id_theme = 0, $initialize = true)
 	loadJavaScriptFile('script.js', array('defer' => false, 'minimize' => true), 'smf_script');
 	loadJavaScriptFile('theme.js', array('minimize' => true), 'smf_theme');
 
-	// If we think we have mail to send, let's offer up some possibilities... robots get pain (Now with scheduled task support!)
-	if ((!empty($modSettings['mail_next_send']) && $modSettings['mail_next_send'] < time() && empty($modSettings['mail_queue_use_cron'])) || empty($modSettings['next_task_time']) || $modSettings['next_task_time'] < time())
-	{
-		if (isBrowser('possibly_robot'))
-		{
-			// @todo Maybe move this somewhere better?!
-			require_once($sourcedir . '/ScheduledTasks.php');
-
-			// What to do, what to do?!
-			if (empty($modSettings['next_task_time']) || $modSettings['next_task_time'] < time())
-				AutoTask();
-			else
-				ReduceMailQueue();
-		}
-		else
-		{
-			$type = empty($modSettings['next_task_time']) || $modSettings['next_task_time'] < time() ? 'task' : 'mailq';
-			$ts = $type == 'mailq' ? $modSettings['mail_next_send'] : $modSettings['next_task_time'];
-
-			addInlineJavaScript('
-		function smfAutoTask()
-		{
-			$.get(smf_scripturl + "?scheduled=' . $type . ';ts=' . $ts . '");
-		}
-		window.setTimeout("smfAutoTask();", 1);');
-		}
-	}
-
 	// And we should probably trigger the cron too.
 	if (empty($modSettings['cron_is_real_cron']))
 	{
@@ -2533,6 +2639,18 @@ function loadTheme($id_theme = 0, $initialize = true)
 		$.get(' . JavaScriptEscape($boardurl) . ' + "/cron.php?ts=' . $ts . '");
 	}
 	window.setTimeout(triggerCron, 1);', true);
+
+		// Robots won't normally trigger cron.php, so for them run the scheduled tasks directly.
+		if (isBrowser('possibly_robot') && (empty($modSettings['next_task_time']) || $modSettings['next_task_time'] < time() || (!empty($modSettings['mail_next_send']) && $modSettings['mail_next_send'] < time() && empty($modSettings['mail_queue_use_cron']))))
+		{
+			require_once($sourcedir . '/ScheduledTasks.php');
+
+			// What to do, what to do?!
+			if (empty($modSettings['next_task_time']) || $modSettings['next_task_time'] < time())
+				AutoTask();
+			else
+				ReduceMailQueue();
+		}
 	}
 
 	// Filter out the restricted boards from the linktree
@@ -2717,7 +2835,7 @@ function loadCSSFile($fileName, $params = array(), $id = '')
 	$params['validate'] = isset($params['validate']) ? $params['validate'] : true;
 	$params['order_pos'] = isset($params['order_pos']) ? (int) $params['order_pos'] : 3000;
 	$params['attributes'] = isset($params['attributes']) ? $params['attributes'] : array();
-	
+
 	// Account for shorthand like admin.css?alp21 filenames
 	$id = (empty($id) ? strtr(str_replace('.css', '', basename($fileName)), '?', '_') : $id) . '_css';
 
@@ -2904,33 +3022,37 @@ function addJavaScriptVar($key, $value, $escape = false)
 	// Take care of escaping the value for JavaScript?
 	if (!empty($escape))
 	{
-		if (is_null($value))
-			$value = 'null';
+		switch (gettype($value)) {
+			// Illegal.
+			case 'resource':
+				break;
 
-		elseif (is_bool($value))
-			$value = var_export($value, true);
+			// Convert PHP objects to arrays before processing.
+			case 'object':
+				$value = (array) $value;
+				// no break
 
-		elseif (is_scalar($value))
-			$value = JavaScriptEscape($value);
+			// Apply JavaScriptEscape() to any strings in the array.
+			case 'array':
+				$replacements = array();
+				array_walk_recursive(
+					$value,
+					function($v, $k) use (&$replacements)
+					{
+						if (is_string($v))
+							$replacements[json_encode($v)] = JavaScriptEscape($v, true);
+					}
+				);
+				$value = strtr(json_encode($value), $replacements);
+				break;
 
-		elseif (is_array($value))
-		{
-			$elements = array();
+			case 'string':
+				$value = JavaScriptEscape($value);
+				break;
 
-			// We only support one-dimensional arrays.
-			foreach ($value as $element)
-			{
-				if (is_null($element))
-					$elements[] = 'null';
-
-				elseif (is_bool($element))
-					$elements[] = var_export($element, true);
-
-				elseif (is_scalar($element))
-					$elements[] = JavaScriptEscape($element);
-			}
-
-			$value = '[' . implode(', ',$elements) . ']';
+			default:
+				$value = json_encode($value);
+				break;
 		}
 	}
 
@@ -3041,8 +3163,19 @@ function loadLanguage($template_name, $lang = '', $fatal = true, $force_reload =
 				$found = true;
 
 				// setlocale is required for basename() & pathinfo() to work properly on the selected language
-				if (!empty($txt['lang_locale']) && !empty($modSettings['global_character_set']))
-					setlocale(LC_CTYPE, $txt['lang_locale'] . '.' . $modSettings['global_character_set']);
+				if (!empty($txt['lang_locale']))
+				{
+					if (strpos($txt['lang_locale'], '.') !== false)
+						$locale_variants = $txt['lang_locale'];
+					else
+						$locale_variants = array_unique(array_merge(
+							!empty($modSettings['global_character_set']) ? array($txt['lang_locale'] . '.' . $modSettings['global_character_set']) : array(),
+							!empty($context['utf8']) ? array($txt['lang_locale'] . '.UTF-8', $txt['lang_locale'] . '.UTF8', $txt['lang_locale'] . '.utf-8', $txt['lang_locale'] . '.utf8') : array(),
+							array($txt['lang_locale'])
+						));
+
+					setlocale(LC_CTYPE, $locale_variants);
+				}
 
 				break;
 			}
@@ -3274,7 +3407,7 @@ function getLanguages($use_cache = true)
 
 		// Avoid confusion when we have more than one English variant installed.
 		// Honestly, our default English version should always have been called "English (US)"
-		if (substr_count(implode(' ', array_keys($context['languages'])), 'english') > 1 && $context['languages']['english']['name'] === 'English')
+		if (!empty($context['languages']) && is_array($context['languages']) && substr_count(implode(' ', array_keys($context['languages'])), 'english') > 1 && $context['languages']['english']['name'] === 'English')
 			$context['languages']['english']['name'] = 'English (US)';
 
 		// Let's cash in on this deal.
@@ -3302,8 +3435,10 @@ function censorText(&$text, $force = false)
 	global $modSettings, $options, $txt;
 	static $censor_vulgar = null, $censor_proper;
 
-	if ((!empty($options['show_no_censored']) && !empty($modSettings['allow_no_censored']) && !$force) || empty($modSettings['censor_vulgar']) || trim($text) === '')
+	if ((!empty($options['show_no_censored']) && !empty($modSettings['allow_no_censored']) && !$force) || empty($modSettings['censor_vulgar']) || !is_string($text) || trim($text) === '')
 		return $text;
+
+	call_integration_hook('integrate_word_censor', array(&$text));
 
 	// If they haven't yet been loaded, load them.
 	if ($censor_vulgar == null)
@@ -3636,7 +3771,7 @@ function loadCacheAccelerator($overrideCache = '', $fallbackSMF = true)
 		}
 
 		// Connect up to the accelerator.
-		$cache_api->connect();
+		if ($cache_api->connect() === false) return false;
 
 		// Don't set this if we are overriding the cache.
 		if (empty($overrideCache))
@@ -3858,7 +3993,7 @@ function set_avatar_data($data = array())
 
 			// External url.
 			else
-				$image = parse_url($data['avatar'], PHP_URL_SCHEME) !== null ? get_proxied_url($data['avatar']) : $modSettings['avatar_url'] . '/' . $data['avatar'];
+				$image = parse_iri($data['avatar'], PHP_URL_SCHEME) !== null ? get_proxied_url($data['avatar']) : $modSettings['avatar_url'] . '/' . $data['avatar'];
 		}
 
 		// Perhaps this user has an attachment as avatar...

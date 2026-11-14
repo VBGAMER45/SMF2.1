@@ -5,10 +5,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2022 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.3
  */
 
 if (!defined('SMF'))
@@ -81,7 +81,7 @@ function setNotifyPrefs($memID, $prefs = array())
 
 	$update_rows = array();
 	foreach ($prefs as $k => $v)
-		$update_rows[] = array($memID, $k, $v);
+		$update_rows[] = array($memID, $k, min(max((int) $v, -128), 127));
 
 	$smcFunc['db_insert']('replace',
 		'{db_prefix}user_alerts_prefs',
@@ -119,9 +119,10 @@ function deleteNotifyPrefs($memID, array $prefs)
  * Verifies a member's unsubscribe token, then returns some member info
  *
  * @param string $type The type of notification the token is for (e.g. 'board', 'topic', etc.)
+ * @param int $itemID The id of the board or topic the token is for. If null, the current board or topic is used.
  * @return array The id and email address of the specified member
  */
-function getMemberWithToken($type)
+function getMemberWithToken($type, $itemID = null)
 {
 	global $smcFunc, $board, $topic, $modSettings;
 
@@ -146,8 +147,11 @@ function getMemberWithToken($type)
 	$member_info = $smcFunc['db_fetch_assoc']($request);
 	$smcFunc['db_free_result']($request);
 
+	if ($itemID === null)
+		$itemID = in_array($type, array('board', 'topic')) && !empty($$type) ? $$type : 0;
+
 	// What token are we expecting?
-	$expected_token = createUnsubscribeToken($member_info['id'], $member_info['email'], $type, in_array($type, array('board', 'topic')) && !empty($$type) ? $$type : 0);
+	$expected_token = createUnsubscribeToken($member_info['id'], $member_info['email'], $type, $itemID);
 
 	// Don't do anything if the token they gave is wrong
 	if ($_REQUEST['token'] !== $expected_token)

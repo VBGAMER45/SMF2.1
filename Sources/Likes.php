@@ -7,10 +7,10 @@
  *
  * @package SMF
  * @author Simple Machines https://www.simplemachines.org
- * @copyright 2021 Simple Machines and individual contributors
+ * @copyright 2025 Simple Machines and individual contributors
  * @license https://www.simplemachines.org/about/smf/license.php BSD
  *
- * @version 2.1 RC4
+ * @version 2.1.5
  */
 
 if (!defined('SMF'))
@@ -25,6 +25,11 @@ class Likes
 	 * @var boolean Know if a request comes from an ajax call or not, depends on $_GET['js'] been set.
 	 */
 	protected $_js = false;
+
+	/**
+	 * @var string The sub action sent in $_GET['sa'].
+	 */
+	protected $_sa = null;
 
 	/**
 	 * @var string If filled, its value will contain a string matching a key on a language var $txt[$this->_error]
@@ -286,6 +291,39 @@ class Likes
 		// Are we calling this directly? if so, set a proper data for the response. Do note that __METHOD__ returns both the class name and the function name.
 		if ($this->_sa == __FUNCTION__)
 			$this->_data = __FUNCTION__;
+
+		// Check to see if there is an unread alert to delete as well...
+		$result = $smcFunc['db_query']('', '
+			SELECT id_alert, id_member FROM {db_prefix}user_alerts
+			WHERE content_id = {int:like_content}
+				AND content_type = {string:like_type}
+				AND id_member_started = {int:id_member_started}
+				AND content_action = {string:content_action}
+				AND is_read = {int:unread}',
+			array(
+				'like_content' => $this->_content,
+				'like_type' => $this->_type,
+				'id_member_started' => $this->_user['id'],
+				'content_action' => 'like',
+				'unread' => 0,
+			)
+		);
+		// Found one?
+		if ($smcFunc['db_num_rows']($result) == 1)
+		{
+			list($alert, $member) = $smcFunc['db_fetch_row']($result);
+
+			// Delete it
+			$smcFunc['db_query']('', '
+				DELETE FROM {db_prefix}user_alerts
+				WHERE id_alert = {int:alert}',
+				array(
+					'alert' => $alert,
+				)
+			);
+			// Decrement counter for member who received the like
+			updateMemberData($member, array('alerts' => '-'));
+		}
 	}
 
 	/**
@@ -306,7 +344,7 @@ class Likes
 		call_integration_hook('integrate_issue_like_before', array(&$type, &$content, &$user, &$time));
 
 		// Insert the like.
-		$smcFunc['db_insert']('insert',
+		$smcFunc['db_insert']('ignore',
 			'{db_prefix}user_likes',
 			array('content_id' => 'int', 'content_type' => 'string-6', 'id_member' => 'int', 'like_time' => 'int'),
 			array($content, $type, $user['id'], $time),
